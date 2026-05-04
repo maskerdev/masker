@@ -1,0 +1,62 @@
+---
+title: "Portal overview"
+description: "What the Masker portal does and how its pages fit together."
+---
+
+The portal at [masker-voice.fly.dev/portal](https://masker-voice.fly.dev/portal) is a Next.js single-page app served by the Rust API server. It's where you connect your Vapi account, monitor sessions, and download compliance reports. Everything the portal does, you can also do via the [REST API](/api-reference/introduction).
+
+## Pages at a glance
+
+| Page | What it's for |
+| --- | --- |
+| [`/portal/login`](/portal/sign-in) | GitHub OAuth sign-in. The only auth method today. |
+| `/portal/dashboard` | Summary cards (active agents, sessions today, PHI counts) and a list of recent sessions. |
+| [`/portal/agents`](/portal/agents) | List of your agents with status badges, plus the **New Agent** wizard. |
+| `/portal/agents/new` | 3-step wizard: name → Vapi key → copy proxy URL. |
+| `/portal/agents/detail?id=` | One agent's proxy URL, webhook URL, configuration, and last 10 sessions. |
+| [`/portal/sessions`](/portal/sessions) | All sessions across all your agents, filterable by agent and date. |
+| `/portal/sessions/detail?id=` | One session's raw ↔ masked transcript toggle and the [signed compliance report](/compliance/audit-reports). |
+
+## Architecture
+
+The portal is a Next.js 14 app that's statically exported and served by the Rust API server at the same origin. This avoids CORS entirely — the portal's `/api/v1/*` calls go to the same host as the SPA.
+
+```
+Browser ─► masker-voice.fly.dev/portal/* ─► static SPA (Next.js export)
+        ─► masker-voice.fly.dev/api/v1/*  ─► Rust API (auth via session cookie)
+```
+
+The portal source lives in `apps/portal/` in the [GitHub repo](https://github.com/masker-dev/masker). It's TypeScript + Tailwind + shadcn/ui.
+
+## Authentication
+
+The portal uses GitHub OAuth. After sign-in, the API sets a `masker_session` cookie that's `httpOnly`, `Secure`, `SameSite=Lax`. Every `/api/v1/*` request the portal makes is authenticated by that cookie — there is no separate API key for portal users today.
+
+If you want programmatic access (for CI, scripts, or your own dashboards), see [API authentication](/api-reference/authentication).
+
+## Data shown in the portal
+
+Everything the portal renders comes from the SQLite database on the Fly.io volume:
+
+- `users` — one row per GitHub-authenticated user.
+- `agents` — one row per Vapi assistant you've connected.
+- `call_sessions` — one row per inbound Vapi chat-completions request, with raw + masked transcripts as JSON blobs and a foreign key to the agent.
+
+Raw transcripts and the token vault are encrypted at rest with `MASKER_AEAD_KEY` (AES-256-GCM-SIV). The only place raw PHI exists in the system is inside this encrypted vault, accessible only via the session detail view.
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Sign in" icon="key" href="/portal/sign-in">
+    GitHub OAuth flow and session details.
+  </Card>
+  <Card title="Connect a Vapi agent" icon="phone" href="/portal/agents">
+    The 3-step wizard for connecting a Vapi assistant.
+  </Card>
+  <Card title="View sessions" icon="rectangle-list" href="/portal/sessions">
+    The session list, filters, and the raw ↔ masked toggle.
+  </Card>
+  <Card title="Compliance reports" icon="file-shield" href="/portal/compliance-reports">
+    Download per-session signed JSON reports.
+  </Card>
+</CardGroup>

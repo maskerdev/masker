@@ -1,0 +1,111 @@
+---
+title: "Compliance reports"
+description: "On-demand PDF reports for HIPAA, BAA, and security review"
+---
+
+Masker generates **compliance reports** on demand. They're designed to be the single artifact you hand to:
+
+- A prospect's security review team
+- Your own privacy/legal counsel
+- An auditor during a HIPAA risk assessment
+- A partner who's evaluating you for a BAA
+
+## Generate a report
+
+You can generate a report at three scopes:
+
+| Scope | Where | What it covers |
+| --- | --- | --- |
+| **Per-session** | Session detail page | One call, end-to-end |
+| **Per-agent** | Agent detail page | All sessions for one agent in a date range |
+| **Account-wide** | Portal home → "Generate report" | All agents, all sessions, in a date range |
+
+Click **Generate**, pick a time window, and Masker produces a downloadable PDF in a few seconds.
+
+## What's in a report
+
+Every report is structured identically. From the top:
+
+### Cover page
+
+- Account name and Masker organization ID
+- Report scope (session / agent / account)
+- Time window (UTC)
+- Generation timestamp
+- Audit log root hash (more on this below)
+
+### HIPAA Safe Harbor coverage
+
+A table of all 18 Safe Harbor identifier categories with Masker's current coverage status:
+
+| Category | Status |
+| --- | --- |
+| (A) Names | ✓ Full |
+| (B) Geographic subdivisions | ✓ Full |
+| (C) Dates | ◐ Partial — see notes |
+| (D) Phone numbers | ✓ Full |
+| (E) Fax numbers | ✓ Full |
+| (F) Email addresses | ✓ Full |
+| (G) Social Security numbers | ✓ Full |
+| (H) Medical record numbers | ✓ Full |
+| (I) Health plan beneficiary numbers | ◐ Partial |
+| (J) Account numbers | ✓ Full |
+| ... | ... |
+
+The "9 full / 3 partial / 6 in progress" honesty line is preserved in every report. We do not claim full coverage we don't have.
+
+### Redaction summary
+
+For the time window in scope:
+
+- Total sessions
+- Total entities redacted
+- Breakdown by entity kind (PHONE: 1,247, NAME: 892, SSN: 18, …)
+- Breakdown by detection pass (regex, NER, diarization)
+
+### Sample transcripts
+
+A random sample of up to 20 masked transcripts, with tokens in place of PHI. Demonstrates that PHI never reached the upstream LLM.
+
+### Audit log integrity
+
+Masker's audit log is append-only and HMAC-chained. Each event's hash is computed over `(prev_hash || event_payload)`. Reports include:
+
+- The **root hash** at start of window
+- The **root hash** at end of window
+- Number of events in window
+- A statement that the chain verified successfully
+
+If anyone tampered with the log between events, the chain breaks and the report refuses to generate.
+
+### Configuration snapshot
+
+The exact mask policy YAML active during the window, and the upstream model in use per agent. So an auditor can verify what was running, not what's running today.
+
+## Sharing reports
+
+PDFs are downloadable and self-contained. Every page is watermarked with the report ID. Nothing in a report contains PHI — only token replacements. You can email reports without a BAA in place.
+
+Internal links to verify a report's hash chain against the live audit log are available to logged-in account admins.
+
+## Programmatic generation
+
+You can trigger reports via API:
+
+```bash
+curl -H "Cookie: masker_session=..." \
+  https://masker-voice.fly.dev/api/v1/sessions/{session_id}/report \
+  -o report.pdf
+```
+
+See [Get session report](/api-reference/sessions/get-session-report).
+
+Account-wide and agent-wide report endpoints are on the May 30 production roadmap.
+
+## What reports are not
+
+Two honest caveats:
+
+1. **A Masker report is not a SOC 2 attestation.** SOC 2 Type 1 is in flight (Drata, Q3 2026). Type 2 follows. Reports prove what Masker did; SOC 2 proves how Masker is operated.
+
+2. **A Masker report is not a BAA.** Masker offers a BAA to all production customers. The report is evidence you can hand the BAA counterparty.

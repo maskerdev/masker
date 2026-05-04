@@ -1,0 +1,98 @@
+---
+title: "Assistant request webhook"
+api: "POST /vapi/webhook/{agent_id}"
+description: "Vapi assistant-request webhook for dynamic per-call configuration"
+---
+
+This endpoint is called by **Vapi** at the start of each call to fetch the assistant configuration. It's optional — if your Vapi assistant is fully static, you don't need it. Use this when you want to:
+
+- Vary the system prompt per call (e.g. by caller phone number)
+- Attach session metadata to Masker's audit log (call ID, customer ID)
+- Override the model or tools dynamically
+
+For Bolna and Retell, see their respective integration docs — those platforms don't use this exact webhook shape.
+
+## Endpoint
+
+```
+POST /vapi/webhook/{agent_id}
+```
+
+## Path parameters
+
+| Param | Type | Description |
+| --- | --- | --- |
+| `agent_id` | string | Masker agent ID |
+
+## Authentication
+
+Validates the `X-Vapi-Signature` header against `MASKER_VAPI_WEBHOOK_SECRET`. Mismatches → `401`.
+
+Configure both sides:
+
+- Vapi assistant → **Server URL Secret** = your shared secret
+- Masker env → `MASKER_VAPI_WEBHOOK_SECRET` = same shared secret
+
+## Request body
+
+Vapi's standard assistant-request payload:
+
+```json
+{
+  "type": "assistant-request",
+  "call": {
+    "id": "call_01HYZ...",
+    "customer": {"number": "+14155552671"},
+    "assistantId": "asst_..."
+  },
+  "timestamp": 1714771872000
+}
+```
+
+## Response
+
+You return a Vapi assistant configuration. Masker passes through whatever the upstream Vapi assistant config endpoint returns, with the **custom LLM URL** rewritten to point at Masker's proxy:
+
+```json
+{
+  "assistant": {
+    "model": {
+      "provider": "custom-llm",
+      "url": "https://masker-voice.fly.dev/proxy/agt_01HYZ.../v1/chat/completions",
+      "model": "gpt-4o-mini"
+    },
+    "voice": {"provider": "11labs", "voiceId": "..."},
+    "firstMessage": "Hi, thanks for calling. How can I help?",
+    "transcriber": {"provider": "deepgram", "model": "nova-2"}
+  }
+}
+```
+
+## Behavior
+
+1. Validate signature
+2. Look up the agent
+3. Resolve the per-call assistant config (static defaults, or dynamic overrides if the agent has a callback configured)
+4. Rewrite `model.url` to point at the Masker proxy for this agent
+5. Append a `call_started` event to the audit log with the Vapi `call.id`
+6. Return the assistant config
+
+## Errors
+
+| Status | Code | Description |
+| --- | --- | --- |
+| `401` | `bad_signature` | `X-Vapi-Signature` mismatch |
+| `404` | `agent_not_found` | Bad `agent_id` |
+| `422` | `unsupported_event` | `type` is not `assistant-request` |
+
+## What gets logged
+
+- The Vapi `call.id` (no PHI)
+- The customer phone number is **masked before logging** — Masker treats Vapi's payload like any other input
+- The assistant ID and chosen model
+
+What is **not** logged: the resolved system prompt, the `firstMessage`, or any config field that might contain PHI by mistake. If you templating in PHI, mask it on the way in.
+
+## When to skip this webhook
+
+If you don't need dynamic per-call config, skip this endpoint and just put the Masker proxy URL directly in your Vapi assistant's static **Custom LLM URL** field. The proxy is the integration; the webhook is optional.

@@ -1,0 +1,96 @@
+---
+title: "Voice pipeline"
+description: "How masking works for live voice calls (Vapi, Bolna, Retell)"
+---
+
+Voice is what Masker was built for. The hard part isn't masking text — it's masking **streaming, low-latency, partial transcripts** without breaking the user's experience.
+
+This page walks through what happens on a typical call.
+
+## End-to-end flow
+
+```
+caller ─▶ voice platform (Vapi/Bolna/Retell)
+              │
+              ├── ASR (transcript) ──▶ Masker proxy ──▶ LLM ──▶ Masker rehydrate ──▶ TTS ──▶ caller
+              │
+              └── audit (webhook)  ──▶ Masker session writer
+```
+
+Two integration points, both webhook-style:
+
+1. **Custom LLM endpoint** (`POST /proxy/{agent_id}/v1/chat/completions`). The voice platform calls this in place of OpenAI. Masker masks the request, forwards to the upstream model, rehydrates the response, streams back.
+
+2. **Assistant request webhook** (`POST /vapi/webhook/{agent_id}`). Vapi-specific. Masker returns the configuration the platform should use for this call (system prompt, model, function definitions). This is also where audit metadata gets attached to the session.
+
+## Latency budget
+
+Masker adds **45–95 ms** of overhead on a typical chat completion request. Breakdown:
+
+| Stage | Cost |
+| --- | --- |
+| Receive request, parse JSON | ~2 ms |
+| Pass 1 (regex catalogue) | ~1 ms |
+| Pass 2 (Gemma-4 NER) | 30–80 ms |
+| Tokenize + write events | ~5 ms |
+| Forward to upstream model | network only |
+| Rehydrate response stream | ~5 ms |
+| Write session record | async, off the hot path |
+
+Pass 2 is the dominant cost. We run Gemma-4 quantized on the GPU pool; for stub-mode testing it falls through.
+
+For reference: typical voice-agent end-to-end latency targets sit at 800–1,200 ms (ASR + LLM + TTS). Masker's 45–95 ms is **5–10%** of that budget. In our pilots no listener has been able to detect it on a blind A/B.
+
+## Streaming
+
+Masker fully supports **streaming chat completions** (`stream: true`). The flow:
+
+1. Request arrives, Masker masks the request body in full
+2. Upstream LLM streams chunks back to Masker
+3. Masker buffers each chunk just long enough to scan for tokens
+4. Tokens are rehydrated inline, chunks are forwarded
+
+The buffering window is bounded — Masker will not hold more than `MASKER_STREAM_BUFFER_MS` (default 50 ms) of upstream output before flushing. In practice the rehydration scan is faster than the upstream's chunk cadence, so streaming feels native.
+
+## Partial transcripts
+
+When voice platforms send **partial transcripts** ("the user said: 'my number is five five five'..."), Masker treats them like any other input. The detector runs, partial tokens get masked, and rehydration handles the response.
+
+If a partial gets corrected by the next ASR update ("...my number is five five five **one two**"), the new partial is a fresh request to Masker. We don't try to reconcile partials across messages — each request stands alone.
+
+## Audio capture and the audit log
+
+For voice, the audit log captures:
+
+- **Request metadata** — assistant ID, call ID, started_at, ended_at
+- **Per-turn redactions** — which entities were masked, in which speaker's turn
+- **Transcript hash** — SHA-256 of the masked transcript, NOT the raw transcript
+
+The raw transcript is **not** persisted by Masker. It exists only long enough to mask, then it's dropped. If your voice platform stores transcripts, that's a separate retention decision you control there.
+
+## Vapi-specific notes
+
+- Drop the Masker proxy URL into the **Custom LLM** field of your assistant.
+- Drop the Masker webhook URL into the **Server URL** field.
+- Set the **Server URL Secret** to a value you also configure as `MASKER_VAPI_WEBHOOK_SECRET` — Masker validates HMAC signatures on every webhook.
+- Vapi's own credit warnings (when your account is low) come through unmodified — Masker doesn't filter platform messages.
+
+## Bolna-specific notes
+
+- Bolna's "custom LLM" endpoint follows OpenAI chat-completions shape, so the proxy works as-is.
+- Bolna does not currently use the assistant-request webhook — only the proxy.
+- Set `MASKER_UPSTREAM_TIMEOUT_MS` higher (default is 30s) if you're calling slower upstream models.
+
+## Retell-specific notes
+
+- Retell's LLM webhook also follows chat-completions shape — proxy works as-is.
+- Retell sends **continuous partial transcripts**. Masker handles each as an independent request.
+- Set `MASKER_RETELL_PARTIAL_DEDUP=true` to skip redaction work on partials that are byte-identical to the previous (saves NER cost on noisy mics).
+
+## What Masker does **not** do for voice
+
+Honest list:
+
+- **Masker does not run ASR.** Your voice platform handles speech-to-text. We work on transcripts.
+- **Masker does not run TTS.** Your voice platform speaks the rehydrated response back to the caller.
+- **Masker does not record audio.** If you want call recordings, configure that in Vapi/Bolna/Retell and apply a retention policy there. Masker only sees text.

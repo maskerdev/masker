@@ -1,0 +1,125 @@
+---
+title: "Audit reports"
+description: "What's in a Masker compliance report and how the audit log integrity is proven"
+---
+
+Audit reports are the artifact you hand a prospect's security team, your privacy counsel, or a HIPAA auditor. They're designed to answer one question: *what PHI flowed through which systems, and how do we know?*
+
+This page covers what's in a report, how it's built, and how its integrity is verified.
+
+## The report bundle
+
+Every report is a single PDF. It is self-contained — no external links required to verify it.
+
+Sections, in order:
+
+1. **Cover** — scope, time window, generation timestamp, root hash
+2. **Executive summary** — total sessions, total redactions, coverage %, alert count
+3. **HIPAA Safe Harbor matrix** — coverage at the time of generation
+4. **Redaction summary** — counts by entity kind and detection pass
+5. **Sample masked transcripts** — random sample, up to 20
+6. **Audit log integrity** — start hash, end hash, event count, verification status
+7. **Configuration snapshot** — active policy YAML and per-agent upstream
+8. **Appendix** — list of every session in scope (IDs only, no PHI)
+
+## The audit log
+
+Masker writes every event to an **append-only, HMAC-chained log**:
+
+```
+event_n.hash = HMAC-SHA256(audit_key, event_{n-1}.hash || canonical_json(event_n))
+```
+
+Properties this gives us:
+
+- **Tamper-evident.** Editing any past event changes its hash, which breaks every subsequent hash. Any modification is detectable.
+- **Append-only.** Masker writes events with `O_APPEND` and validates the previous hash before appending. Out-of-order writes are rejected.
+- **Independently verifiable.** Given the audit key, anyone can recompute the chain from raw events and validate the root.
+
+The audit key (`MASKER_AUDIT_HMAC_KEY`) is set at deploy time. **Never log this key.** Treat it like a signing key — losing it means future events can't extend the chain.
+
+## What's in an event
+
+```json
+{
+  "ts": "2026-05-03T21:14:32.481Z",
+  "event_id": "evt_01HYZ...",
+  "session_id": "sess_01HYZ...",
+  "agent_id": "agt_01HYZ...",
+  "kind": "redaction",
+  "pass": "gemma",
+  "entity_kind": "NAME",
+  "span": [142, 156],
+  "confidence": 0.94,
+  "token_kind": "MSKV1",
+  "kid": "K_HEALTHCARE",
+  "prev_hash": "...",
+  "this_hash": "..."
+}
+```
+
+What's **not** in an event:
+
+- The original PHI value (`text`)
+- The token value
+- Any payload contents
+
+This means leaking the audit log does not leak PHI. The log shows that something happened; it does not show what was said.
+
+## Sample transcripts
+
+The "sample masked transcripts" section randomly samples up to 20 sessions from the scope window and reproduces the masked request body for each.
+
+A masked transcript looks like this:
+
+```
+User: Hi, I'm calling for MSKV1.NAME.K_HEALTHCARE.A1B2... My phone number is
+      MSKV1.PHONE.K_HEALTHCARE.C3D4...
+
+Agent: Hi MSKV1.NAME.K_HEALTHCARE.A1B2..., I see you're calling about your
+       appointment on MSKV1.DATE.K_HEALTHCARE.E5F6...
+```
+
+These show that PHI never reached the upstream LLM — the model only ever saw tokens. The samples are deterministic per report (same scope + same generation time → same samples), so two auditors looking at the same report see the same transcripts.
+
+## Coverage section
+
+The Safe Harbor matrix is **stamped at generation time**. If you upgrade Masker between reports and we promote a category from partial to full, your June report shows the better coverage; the May report still shows what was true in May. This is intentional — auditors want point-in-time evidence.
+
+## Configuration snapshot
+
+The exact YAML of every active policy at the time the report was generated, with every active agent's upstream model. This means if a question comes up six months later — "what model were we on for this call?" — the report has the answer.
+
+## Verifying a report
+
+There are three levels of verification:
+
+### Level 1 — visual review
+
+Open the PDF. Check the coverage table, redaction counts, and sample transcripts. This is what most stakeholders do.
+
+### Level 2 — root hash check
+
+Every report includes the audit root hash for the start and end of the window. From the portal, you can navigate to **Audit log → verify hash** and paste the hash. Masker re-walks the chain and confirms.
+
+### Level 3 — independent recomputation
+
+For an external auditor, we provide the audit key (under a separate signed envelope) and a copy of the raw event log. They can recompute the chain from scratch using any HMAC-SHA256 implementation. The repo at [github.com/navi25/masker](https://github.com/navi25/masker) has a `masker audit verify` command they can run.
+
+## Caveats
+
+A few honest limits:
+
+- **Reports can't show what wasn't logged.** If you turn off `audit.log_events` (don't), the chain has gaps and reports say so.
+- **Reports can't verify upstream behavior.** We can prove what we sent; we can't prove what OpenAI / Anthropic / etc. did with it. Their BAA and SOC 2 cover that.
+- **Reports stamp the policy at generation time, not at the time of every call.** If you change policy mid-window, the report shows the policy at the end. The audit log itself shows the policy version on every event.
+
+## Generating reports
+
+Three ways:
+
+- **Portal** — one-click from session, agent, or account home
+- **API** — `GET /api/v1/sessions/{id}/report` for per-session; agent and account endpoints follow May 30
+- **CLI** — `masker report --session-id ... --output report.pdf`
+
+See [Compliance reports](/portal/compliance-reports) for the portal flow.

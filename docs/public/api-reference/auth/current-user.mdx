@@ -1,0 +1,62 @@
+---
+title: "Current user"
+api: "GET /api/v1/me"
+description: "Get the user record for the current session"
+---
+
+Returns the user record associated with the current `masker_session` cookie. The portal calls this on every page load.
+
+## Endpoint
+
+```
+GET /api/v1/me
+```
+
+## Authentication
+
+Requires the `masker_session` cookie.
+
+## Request
+
+No parameters.
+
+```bash
+curl -H "Cookie: masker_session=ey..." \
+  https://masker-voice.fly.dev/api/v1/me
+```
+
+## Response
+
+```json
+{
+  "user": {
+    "id": "usr_01HYZ...",
+    "github_login": "navi25",
+    "github_id": 12345678,
+    "name": "Navendra Jha",
+    "email": "navendra07@gmail.com",
+    "avatar_url": "https://avatars.githubusercontent.com/u/12345678?v=4",
+    "created_at": "2026-04-12T18:22:11Z",
+    "last_seen_at": "2026-05-03T21:14:32Z"
+  },
+  "account": {
+    "id": "acc_01HYZ...",
+    "name": "navi25",
+    "plan": "beta",
+    "created_at": "2026-04-12T18:22:11Z"
+  },
+  "permissions": ["agents:read", "agents:write", "sessions:read", "reports:read", "billing:read"]
+}
+```
+
+## Errors
+
+| Status | Code | Description |
+| --- | --- | --- |
+| `401` | `unauthenticated` | No valid session cookie |
+
+## Field notes
+
+- `email` may be `null` if the user has their GitHub email set to private and no public email is set.
+- `permissions` will gain finer scopes when role-based access ships (May 30).
+- `account.plan` is one of `beta`, `pilot`, `production`, `internal`. Beta accounts have a per-day rate limit; pilot and production do not.

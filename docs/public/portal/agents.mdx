@@ -1,0 +1,70 @@
+---
+title: "Agents"
+description: "Create and manage masker agents — one per voice agent or LLM application"
+---
+
+An **agent** in Masker is a configuration container that holds:
+
+- A **mask policy** (which entities to redact, which tokenization scheme to use)
+- An **upstream model** (the LLM you want to call — `openai:gpt-4o-mini`, `openai:gpt-4o`, or `stub` for testing)
+- A unique **agent ID** that becomes part of your proxy URL
+
+Each Vapi assistant, Bolna campaign, or Retell agent should map to its own Masker agent. This keeps policies, audit logs, and compliance reports cleanly separated per workflow.
+
+## Create an agent
+
+From the portal at [masker-voice.fly.dev/portal/agents](https://masker-voice.fly.dev/portal/agents):
+
+1. Click **New agent**
+2. Give it a name (e.g. `appointment-bot-prod`)
+3. Pick an upstream model
+4. Choose a mask policy — the default `healthcare-default` covers HIPAA Safe Harbor categories Masker supports today
+5. Click **Create**
+
+You'll see the agent ID and the proxy URL on the next screen:
+
+```
+Proxy URL: https://masker-voice.fly.dev/proxy/{agent_id}/v1/chat/completions
+Vapi webhook: https://masker-voice.fly.dev/vapi/webhook/{agent_id}
+```
+
+Drop the proxy URL into your voice platform's "custom LLM" field. No SDK install. No code change.
+
+## Agent settings
+
+| Field | What it does |
+| --- | --- |
+| **Name** | Display label in portal and audit reports |
+| **Upstream model** | The actual LLM Masker calls. Currently `openai:gpt-4o-mini` (default), `openai:gpt-4o`, `stub` |
+| **Mask policy** | Which detectors run, which entities to mask, which tokenization scheme |
+| **Tokenization** | `vault-deterministic` (HMAC-SHA256, SQLite vault, same value → same token) or `reversible-aead` (AES-256-GCM-SIV, self-contained, no vault lookup) |
+
+## Default policy
+
+Every new agent starts with `healthcare-default`, defined in [`configs/mask_policy.yaml`](https://github.com/navi25/masker/blob/main/configs/mask_policy.yaml). It includes:
+
+- **Key ID:** `K_HEALTHCARE`
+- **Pseudonymization budget (ε):** 0.5
+- **Coverage:** 9 of 18 HIPAA Safe Harbor categories fully, 3 partially
+
+You can edit this YAML and reload — no redeploy needed. See [Mask policy](/configuration/mask-policy) for the full schema.
+
+## Delete an agent
+
+From the agent detail page, click **Delete**. This is a hard delete:
+
+- Agent row is removed from the database
+- All sessions for this agent become orphaned (preserved for audit but not reachable from agent view)
+- The proxy URL stops responding (404)
+
+Deletion does **not** purge the vault — tokens issued by this agent remain in the vault and can still be looked up by report generation. This is intentional: deleting an agent must not break audit history.
+
+## Programmatic management
+
+Anything you can do in the portal, you can do via the REST API. See:
+
+- [List agents](/api-reference/agents/list-agents) — `GET /api/v1/agents`
+- [Create agent](/api-reference/agents/create-agent) — `POST /api/v1/agents`
+- [Get agent](/api-reference/agents/get-agent) — `GET /api/v1/agents/:id`
+- [Delete agent](/api-reference/agents/delete-agent) — `DELETE /api/v1/agents/:id`
+- [List agent sessions](/api-reference/agents/list-agent-sessions) — `GET /api/v1/agents/:id/sessions`

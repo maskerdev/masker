@@ -1,0 +1,108 @@
+---
+title: "Quickstart"
+description: "Place your first masked call in under five minutes."
+---
+
+This guide takes you from zero to a working masked Vapi call. By the end you'll have a Vapi assistant that routes every conversation through Masker, and you'll be able to verify in OpenAI's own logs that PHI never reached the model.
+
+<Note>
+You need a [Vapi account](https://dashboard.vapi.ai), a phone number on Vapi (or web call testing), and an OpenAI API key. The Masker portal currently requires a GitHub account for sign-in.
+</Note>
+
+## 1. Sign in to the Masker portal
+
+Open [masker-voice.fly.dev/portal/login](https://masker-voice.fly.dev/portal/login) and click **Sign in with GitHub**. The GitHub OAuth flow will ask for your email — Masker stores nothing else from your GitHub profile.
+
+After sign-in you'll land on the dashboard with a "Connect your first agent" call to action.
+
+## 2. Connect your Vapi agent
+
+<Steps>
+  <Step title="Click 'New Agent'">
+    On the dashboard, click **New Agent**. The 3-step wizard opens.
+  </Step>
+  <Step title="Name the agent">
+    Use something descriptive — the agent name shows up in your session list. Examples: `Patient intake (test)`, `Prior auth — primary care`.
+  </Step>
+  <Step title="Paste your Vapi API key">
+    From the [Vapi dashboard](https://dashboard.vapi.ai/account), copy your API key and paste it. Masker uses the key once to create the assistant on Vapi's side, then stores it encrypted (AES-256-GCM-SIV) so it can read assistant config but never logs it.
+
+    <Warning>
+    Don't paste a customer's Vapi key. Use your own dev account for testing — the key has full permissions on your Vapi org.
+    </Warning>
+  </Step>
+  <Step title="Copy the proxy URL">
+    Masker generates two URLs unique to this agent:
+    - **Proxy URL** — `https://masker-voice.fly.dev/proxy/{agent_id}/v1/chat/completions` — this is the OpenAI-compatible endpoint Vapi will hit.
+    - **Webhook URL** — `https://masker-voice.fly.dev/vapi/webhook/{agent_id}` — this handles Vapi's `assistant-request` events.
+
+    The wizard shows a "Copy" button next to each. Both URLs were already configured on Vapi's side automatically, so you usually don't need to paste them anywhere — but they're shown for reference and for non-Vapi platforms in the future.
+  </Step>
+</Steps>
+
+After step 4, the agent appears on the dashboard with a green **Live** badge.
+
+## 3. Verify the assistant on Vapi
+
+Open your Vapi dashboard → **Assistants** → find the assistant Masker just created (named the same as your agent). Confirm:
+
+- **Model provider:** Custom LLM
+- **Custom LLM URL:** the Masker proxy URL
+- **Model:** `gpt-4o-mini` (default — change in Vapi if you want a different upstream)
+
+If you want to use Masker with an existing assistant instead of letting it create a new one, go to that assistant's settings, switch the Model provider to **Custom LLM**, and paste the proxy URL.
+
+## 4. Place a test call
+
+Use Vapi's **Talk to Assistant** button (in the assistant detail page) or call the phone number on the assistant.
+
+Try saying something like:
+
+> "Hi, my name is Sarah Johnson. My date of birth is March 14, 1982, and my member ID is BCBS-447299."
+
+The assistant should respond naturally, using your name. Behind the scenes:
+
+- Masker tokenized `Sarah Johnson` → `MSKV1.person_name.K_HEALTHCARE.a3f9...`
+- Masker tokenized `March 14, 1982` → `MSKV1.dob.K_HEALTHCARE.b7c2...`
+- Masker tokenized `BCBS-447299` → `MSKV1.account_number.K_HEALTHCARE.c1d8...`
+- Forwarded the masked prompt to OpenAI
+- Rehydrated the tokens in OpenAI's response before sending it back to Vapi
+
+## 5. Verify in OpenAI's logs
+
+Open [platform.openai.com/logs](https://platform.openai.com/logs) and find the chat completion that just ran. The **Input** section should look like:
+
+```
+User: Hi, my name is MSKV1.person_name.K_HEALTHCARE.a3f9...
+      My date of birth is MSKV1.dob.K_HEALTHCARE.b7c2...
+      and my member ID is MSKV1.account_number.K_HEALTHCARE.c1d8...
+```
+
+No raw PHI. No name, no DOB, no member ID. This is the proof — your LLM provider's logs (which OpenAI keeps for 30 days by default, even on enterprise) only ever saw tokens.
+
+## 6. View the masked transcript and report
+
+Back in the Masker portal:
+
+1. Open **Sessions** → click the session that just completed.
+2. Toggle between **Raw** and **Masked** views.
+3. Click **Download report** to get the [Ed25519-signed JSON compliance report](/compliance/audit-reports).
+
+The report includes the BAA chain (Vapi → OpenAI → Deepgram → ElevenLabs), the HIPAA Safe Harbor coverage breakdown for that session, and the count of each PHI category detected.
+
+## What's next
+
+<CardGroup cols={2}>
+  <Card title="Configure the masking policy" icon="sliders" href="/configuration/mask-policy">
+    Tune which detectors run and how aggressively they tokenize.
+  </Card>
+  <Card title="Understand the audit report" icon="file-shield" href="/compliance/audit-reports">
+    What's in the report, how to verify the Ed25519 signature offline.
+  </Card>
+  <Card title="Self-host in your VPC" icon="server" href="/configuration/deployment">
+    Run Masker as a Rust container inside your AWS / GCP / on-prem environment.
+  </Card>
+  <Card title="Request beta access" icon="envelope" href="/get-started/beta-access">
+    For production use — May 30, 2026 launch.
+  </Card>
+</CardGroup>

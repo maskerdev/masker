@@ -1,0 +1,142 @@
+---
+title: "CLI reference"
+description: "Every command, flag, and exit code for masker and masker-voice"
+---
+
+## Global flags
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--config <path>` | `~/.config/masker/config.toml` | Config file location |
+| `--server <url>` | (none) | Override remote API URL |
+| `--policy <path>` | `./configs/mask_policy.yaml` | Override policy file |
+| `--json` | `false` | Force JSON output |
+| `--quiet` | `false` | Suppress non-essential logs |
+| `-v`, `--verbose` | (off) | More logs (`-vv` for trace) |
+| `--help` | | Print help |
+
+## `masker mask`
+
+Mask a payload from stdin or a file.
+
+```bash
+masker mask [--input <file>] [--policy <path>] [--scheme vault-deterministic|reversible-aead|synthetic]
+```
+
+| Flag | Description |
+| --- | --- |
+| `--input <file>` | Read input from file. Default stdin. |
+| `--scheme <name>` | Override tokenization scheme. |
+| `--passes <list>` | Comma-separated passes (`regex`, `gemma`). Default policy-driven. |
+
+**Output:** JSON object with `masked`, `events`, `policy_name`, `policy_version`.
+
+**Exit:** `0` on success, `2` if no entities matched and `--require-match` is set.
+
+## `masker detect`
+
+Run detection only, no tokenization. Useful for tuning policies.
+
+```bash
+masker detect [--input <file>] [--policy <path>] [--threshold <float>]
+```
+
+**Output:** JSON list of events (kind, span, text, confidence, pass).
+
+## `masker policy`
+
+Manage mask policies.
+
+| Subcommand | Description |
+| --- | --- |
+| `masker policy validate <path>` | Validate a policy YAML |
+| `masker policy diff <a> <b>` | Diff two policies |
+| `masker policy show [--name <name>]` | Print the active policy as JSON |
+| `masker policy reload --server <url>` | Trigger remote reload of a running server |
+
+## `masker agents`
+
+Manage agents on a remote server.
+
+| Subcommand | Description |
+| --- | --- |
+| `masker agents list` | List agents |
+| `masker agents create --name <n> --upstream <model>` | Create an agent |
+| `masker agents show <id>` | Show one agent |
+| `masker agents delete <id>` | Delete |
+
+## `masker sessions`
+
+Inspect sessions on a remote server.
+
+| Subcommand | Description |
+| --- | --- |
+| `masker sessions list [--agent <id>] [--since <duration>]` | List sessions |
+| `masker sessions show <id>` | Show full session detail |
+| `masker sessions tail [--agent <id>]` | Live stream of session-completed events |
+
+## `masker report`
+
+Generate compliance reports.
+
+```bash
+masker report --session-id <id> --output report.pdf
+masker report --agent-id <id> --since 7d --output weekly.pdf
+masker report --since 30d --output monthly.pdf      # account-wide
+```
+
+| Flag | Description |
+| --- | --- |
+| `--session-id` | Per-session report |
+| `--agent-id` | Per-agent report |
+| `--since <duration>` | Time window. `1h`, `7d`, `30d` |
+| `--output <file>` | PDF output path. Required. |
+
+## `masker vault`
+
+Vault administration. **Use with care** — affects token reversibility.
+
+| Subcommand | Description |
+| --- | --- |
+| `masker vault stats` | Row count, size on disk, oldest/newest token |
+| `masker vault rotate-key --new-kid <id>` | Re-encrypt vault under a new `kid` |
+| `masker vault export [--out <path>]` | Encrypted backup (writes ciphertext, requires the `kid` key to use) |
+| `masker vault purge --before <date>` | Hard-delete tokens older than `<date>`. Cannot be undone. |
+
+## `masker-voice replay`
+
+Replay an audio file through the full voice pipeline.
+
+```bash
+masker-voice replay --input recording.wav --policy configs/mask_policy.yaml \
+  [--asr-provider deepgram|openai|whisper-local] \
+  [--diarize true|false] \
+  [--output transcript.json]
+```
+
+| Flag | Description |
+| --- | --- |
+| `--input <file>` | WAV or MP3 input. Required. |
+| `--asr-provider` | Which ASR to use. Default `whisper-local`. |
+| `--diarize` | Run Pass 3 diarization. Default true. |
+| `--output <file>` | Write masked transcript to file. |
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success |
+| `1` | Generic error |
+| `2` | Command-specific failure (e.g. `--require-match` not satisfied) |
+| `3` | Policy validation failure |
+| `4` | Auth failure (missing or invalid `MASKER_SESSION`) |
+| `5` | Server unreachable |
+| `64` | Usage error (bad flags) |
+
+## Environment variables read by the CLI
+
+- `MASKER_CONFIG` — config file path
+- `MASKER_SERVER` — default `--server` URL
+- `MASKER_SESSION` — session cookie for remote commands
+- `MASKER_POLICY_PATH` — default `--policy`
+- `RUST_LOG` — standard `tracing` filter (`masker=debug,tower=info`)

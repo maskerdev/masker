@@ -1,0 +1,62 @@
+---
+title: "What is Masker?"
+description: "A data-flow privacy layer for voice AI — not a detection library."
+---
+
+## In one sentence
+
+Masker is a forward proxy that sits between your voice agent and your LLM, redacts PHI before the LLM sees it, and rehydrates the redacted values in the LLM's response so the caller hears the right answer.
+
+## In three sentences
+
+Voice agents capture sensitive data — names, dates of birth, social security numbers, diagnoses — in real-time conversation. By default, that raw data flows straight into your LLM provider's logs (OpenAI's chat completion logs, Anthropic's audit logs), into your transcript store, into your call recordings, and into every tool call your agent makes. Masker is the data-flow layer that catches PHI on the way to the LLM, replaces it with deterministic tokens, and reverses the substitution on the way back — so the caller experience is unchanged but PHI never reaches the model or the logs.
+
+## What Masker is not
+
+<AccordionGroup>
+  <Accordion title="Not a detection library">
+    Microsoft Presidio, AWS Comprehend Medical, and similar tools find PHI in a string. They don't move data safely across a live call. Masker uses detection (in fact, Masker's first detection pass is regex similar to Presidio's), but the product is the data-flow layer around it: tokenization, vault, rehydration, audit, and the per-agent proxy that wires it into Vapi without a code change.
+  </Accordion>
+  <Accordion title="Not an SDK you embed in your app">
+    Masker does not run inside your application process. It runs as a separate Rust service that your voice platform forwards LLM calls to. There is no `import masker` or `pip install masker` story today — the integration is a URL, not a function call.
+  </Accordion>
+  <Accordion title="Not a HIPAA BAA replacement">
+    Masker reduces the surface area where PHI lives, but you still need BAAs with your voice platform (Vapi), your STT/TTS providers (Deepgram, ElevenLabs), and any LLM provider you forward to. Masker generates a per-session report that documents this BAA chain, but Masker itself is one node in the chain — not a substitute for the others.
+  </Accordion>
+  <Accordion title="Not a full ambient scribe (Abridge / Nabla)">
+    Ambient scribes listen passively and produce summaries. Masker is for active voice agents that hold conversations with patients (intake, scheduling, prior auth, follow-up). If you're building an ambient scribe, Masker is not the right fit.
+  </Accordion>
+</AccordionGroup>
+
+## How it differs from common alternatives
+
+| | Masker | Microsoft Presidio | AWS Comprehend Medical | Build-your-own middleware |
+| --- | :---: | :---: | :---: | :---: |
+| Runs as a proxy in front of your LLM | ✅ | — | — | — |
+| Vapi integration via one URL change | ✅ | ❌ | ❌ | — |
+| Deterministic tokens with reversible vault | ✅ | partial | ❌ | — |
+| Word-level audio redaction | ✅ | ❌ | ❌ | — |
+| Per-session Ed25519-signed audit report | ✅ | ❌ | ❌ | — |
+| HIPAA Safe Harbor benchmarked | partial today, full by May 30 | ❌ | partial | — |
+| Self-hosted in your VPC | available on request | library only | ❌ | — |
+
+## Two design choices worth knowing
+
+### Privacy is a data-flow problem, not a detection problem
+
+Detection finds names. Data flow controls where names go: into the LLM context, into the transcript store, into the recording bucket, into the function-call arguments, into the analytics pipeline. Most "PII tools" stop at detection and leave the rest to you. Masker treats every one of those flows as a place PHI can leak and provides primitives (tokens, vault, redacted audio, audit log) that make all of them safe by default.
+
+### Tokens, not redactions
+
+When Masker sees `"My name is John Smith"`, it doesn't send `"My name is [REDACTED]"` to your LLM — it sends `"My name is MSKV1.person_name.K_HEALTHCARE.a3f9..."`. The LLM treats the token as an opaque string, generates a response that may include the token, and Masker reverses the substitution on the way back. The caller hears `"Got it, John."` — not `"Got it, [REDACTED]."`. Tokens are deterministic per session, so the LLM can refer to "John" consistently across multiple turns.
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="How it works" icon="diagram-project" href="/get-started/how-it-works">
+    The end-to-end request path from Vapi to your LLM and back.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/get-started/quickstart">
+    First masked call in under five minutes.
+  </Card>
+</CardGroup>

@@ -1,0 +1,58 @@
+---
+title: "Delete agent"
+api: "DELETE /api/v1/agents/{id}"
+description: "Hard-delete an agent"
+---
+
+Permanently deletes an agent. The agent's proxy URL stops responding immediately. Past sessions remain in the database for audit, but become orphaned (no longer reachable from agent listings).
+
+This action **cannot be undone**.
+
+## Endpoint
+
+```
+DELETE /api/v1/agents/{id}
+```
+
+## Authentication
+
+Requires `masker_session`. The signed-in user must be an admin of the account.
+
+## Path parameters
+
+| Param | Type | Description |
+| --- | --- | --- |
+| `id` | string | Agent ID |
+
+## Request
+
+```bash
+curl -X DELETE -H "Cookie: masker_session=ey..." \
+  https://masker-voice.fly.dev/api/v1/agents/agt_01HYZ...
+```
+
+## Response
+
+`204 No Content` on success.
+
+## What happens on delete
+
+1. The agent row is removed from the database.
+2. In-flight requests on the agent's proxy URL complete normally; new requests get `404`.
+3. Past sessions are preserved with a backreference to the (now-deleted) agent ID.
+4. The vault is **not** purged. Tokens issued by this agent remain reversible if the `kid` keys are still present. This is intentional — deleting an agent must not break audit history.
+5. An `agent_deleted` event is appended to the audit log.
+
+## Errors
+
+| Status | Code | Description |
+| --- | --- | --- |
+| `401` | `unauthenticated` | Missing session |
+| `403` | `forbidden` | Signed-in user isn't an admin |
+| `404` | `agent_not_found` | No such agent or already deleted |
+
+## Recovering from accidental deletion
+
+There is no automatic recovery. The audit log shows the deletion event with a timestamp. If you need to restore the agent's settings, retrieve the most recent compliance report for that agent — it includes the configuration snapshot.
+
+A 30-day soft-delete with restore is on the roadmap.

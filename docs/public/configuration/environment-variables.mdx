@@ -1,0 +1,119 @@
+---
+title: "Environment variables"
+description: "Complete list of environment variables Masker reads at boot"
+---
+
+Masker is configured entirely via environment variables. There is no global config file beyond the [mask policy](/configuration/mask-policy).
+
+This page is the source of truth for every variable Masker reads.
+
+## Required
+
+| Variable | Example | What it does |
+| --- | --- | --- |
+| `MASKER_LISTEN_ADDR` | `0.0.0.0:8080` | Address the API server binds to |
+| `MASKER_PUBLIC_URL` | `https://masker-voice.fly.dev` | Used to construct redirect URIs and proxy URLs in the portal |
+| `MASKER_DATABASE_URL` | `sqlite:///data/masker.db` | SQLite connection string. The `/data` mount is a Fly volume. |
+| `MASKER_GITHUB_CLIENT_ID` | `Iv1.abc123...` | GitHub OAuth app client ID |
+| `MASKER_GITHUB_CLIENT_SECRET` | (32-byte secret) | GitHub OAuth app secret |
+| `MASKER_SESSION_SECRET` | base64(32 bytes) | HMAC key for cookie sessions |
+| `MASKER_KEY_K_HEALTHCARE` | base64(32 bytes) | Active key for the default `K_HEALTHCARE` `kid` |
+
+## Upstream LLM
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MASKER_UPSTREAM_PROVIDER` | `openai` | One of `openai`, `stub` |
+| `MASKER_OPENAI_API_KEY` | (none) | Required if provider is `openai` |
+| `MASKER_OPENAI_BASE_URL` | `https://api.openai.com` | Override for Azure OpenAI or proxies |
+| `MASKER_DEFAULT_MODEL` | `gpt-4o-mini` | Used when an agent doesn't specify a model |
+| `MASKER_UPSTREAM_TIMEOUT_MS` | `30000` | Per-request timeout to the upstream provider |
+| `MASKER_STREAM_BUFFER_MS` | `50` | Max time to hold a streaming chunk for token rehydration |
+
+## Detection
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MASKER_POLICY_PATH` | `configs/mask_policy.yaml` | Path to the active mask policy |
+| `MASKER_GEMMA_MODEL_PATH` | `models/gemma-4-ner.gguf` | Path to the quantized NER model file |
+| `MASKER_GEMMA_DEVICE` | `auto` | `cpu`, `cuda`, or `auto` |
+| `MASKER_GEMMA_BATCH_SIZE` | `8` | Inference batch size |
+| `MASKER_DETECTION_TIMEOUT_MS` | `200` | Per-request budget for all detection passes; over-budget calls fall back to regex-only |
+
+## Vault & keys
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MASKER_VAULT_PATH` | `/data/vault.db` | SQLite vault for vault-deterministic tokens |
+| `MASKER_KEY_<KID>` | (none) | One per `kid` declared in policy. Base64-encoded 32-byte key. |
+| `MASKER_KEY_<KID>_OLD` | (none) | Previous version, kept for rehydration during rotation |
+| `MASKER_KEY_ROTATION_GRACE_DAYS` | `30` | How long old keys remain registered after rotation |
+
+## Webhooks & integrations
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MASKER_VAPI_WEBHOOK_SECRET` | (none) | HMAC secret for Vapi server URL signature verification |
+| `MASKER_BOLNA_WEBHOOK_SECRET` | (none) | Same, for Bolna |
+| `MASKER_RETELL_PARTIAL_DEDUP` | `false` | Skip masking work on partials byte-identical to previous |
+
+## Audit & retention
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MASKER_AUDIT_LOG_PATH` | `/data/audit.log` | Append-only HMAC-chained audit log |
+| `MASKER_AUDIT_HMAC_KEY` | (required for prod) | 32-byte key for the audit chain |
+| `MASKER_PAYLOAD_RETENTION_DAYS` | `0` | Encrypted payload retention. `0` = don't store payloads. |
+| `MASKER_SESSION_METADATA_RETENTION_DAYS` | `90` | How long to keep session rows |
+
+## Operational
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MASKER_LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error` |
+| `MASKER_LOG_FORMAT` | `json` | `json` or `pretty` |
+| `MASKER_METRICS_ADDR` | (off) | If set, exposes Prometheus metrics on this address |
+| `MASKER_DEV` | `0` | When `1`, relaxes validation and enables stub upstream |
+| `RUST_BACKTRACE` | `0` | Standard Rust backtrace toggle |
+
+## Example: minimal Fly.io config
+
+```toml
+# fly.toml excerpt
+[env]
+  MASKER_LISTEN_ADDR = "0.0.0.0:8080"
+  MASKER_PUBLIC_URL = "https://masker-voice.fly.dev"
+  MASKER_DATABASE_URL = "sqlite:///data/masker.db"
+  MASKER_VAULT_PATH = "/data/vault.db"
+  MASKER_AUDIT_LOG_PATH = "/data/audit.log"
+  MASKER_DEFAULT_MODEL = "gpt-4o-mini"
+  MASKER_LOG_LEVEL = "info"
+  MASKER_LOG_FORMAT = "json"
+
+[[mounts]]
+  source = "masker_data"
+  destination = "/data"
+```
+
+Secrets are set via `flyctl secrets set`:
+
+```bash
+flyctl secrets set \
+  MASKER_GITHUB_CLIENT_ID=Iv1... \
+  MASKER_GITHUB_CLIENT_SECRET=... \
+  MASKER_SESSION_SECRET=$(openssl rand -base64 32) \
+  MASKER_KEY_K_HEALTHCARE=$(openssl rand -base64 32) \
+  MASKER_AUDIT_HMAC_KEY=$(openssl rand -base64 32) \
+  MASKER_OPENAI_API_KEY=sk-...
+```
+
+## Defaults vs. production
+
+The `healthcare-default` policy and the defaults above are tuned for a hosted Fly.io deploy. When you run Masker **inside your own VPC**:
+
+- Set `MASKER_DATABASE_URL` to a Postgres or MySQL connection string (SQLite is fine for single-node, but multi-region wants a real DB)
+- Set `MASKER_VAULT_PATH` to a path on a replicated volume, **or** switch to `reversible-aead` tokenization to avoid vault state altogether
+- Set `MASKER_AUDIT_LOG_PATH` to a path that backs up to your SIEM
+- Provide `MASKER_KEY_<KID>` values from your secret store, not flat env
+
+See [Deployment](/configuration/deployment) for full VPC patterns.

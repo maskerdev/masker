@@ -1,0 +1,80 @@
+---
+title: "Get session"
+api: "GET /api/v1/sessions/{id}"
+description: "Fetch full detail for one session"
+---
+
+Returns full session detail, including the redaction events and (if `log_payloads` is on for the agent) the request/masked/response payloads.
+
+## Endpoint
+
+```
+GET /api/v1/sessions/{id}
+```
+
+## Authentication
+
+Requires `masker_session`.
+
+## Path parameters
+
+| Param | Type | Description |
+| --- | --- | --- |
+| `id` | string | Session ID, e.g. `sess_01HYZ...` |
+
+## Request
+
+```bash
+curl -H "Cookie: masker_session=ey..." \
+  https://masker-voice.fly.dev/api/v1/sessions/sess_01HYZ...
+```
+
+## Response
+
+```json
+{
+  "session": {
+    "id": "sess_01HYZ...",
+    "agent_id": "agt_01HYZ...",
+    "agent_name": "appointment-bot-prod",
+    "started_at": "2026-05-03T21:14:32Z",
+    "ended_at": "2026-05-03T21:14:32.794Z",
+    "duration_ms": 794,
+    "status": "ok",
+    "upstream_model": "gpt-4o-mini",
+    "policy_name": "healthcare-default",
+    "policy_version": 1,
+    "stage_durations_ms": {
+      "detection": 56,
+      "tokenize": 4,
+      "upstream": 728,
+      "rehydrate": 6
+    },
+    "events": [
+      {
+        "event_id": "evt_01HYZ...",
+        "pass": "gemma",
+        "entity_kind": "NAME",
+        "span": [142, 156],
+        "confidence": 0.94,
+        "token_kind": "MSKV1",
+        "kid": "K_HEALTHCARE"
+      }
+    ],
+    "payloads": {
+      "request": null,
+      "masked": null,
+      "response": null
+    }
+  }
+}
+```
+
+`payloads.*` fields are populated only when `log_payloads: true` is set in the agent's policy. By default they are `null`.
+
+## Errors
+
+| Status | Code | Description |
+| --- | --- | --- |
+| `401` | `unauthenticated` | Missing session |
+| `404` | `session_not_found` | No such session in this account |

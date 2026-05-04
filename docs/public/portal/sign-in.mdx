@@ -1,0 +1,73 @@
+---
+title: "Sign in"
+description: "GitHub OAuth — the only sign-in method today."
+---
+
+The Masker portal uses GitHub OAuth. There is no email/password sign-up, no SSO via Google, no SAML. This is intentional for the beta — every Masker user is a developer, and GitHub is the lowest-friction auth for that audience.
+
+## How sign-in works
+
+<Steps>
+  <Step title="Open the login page">
+    Go to [masker-voice.fly.dev/portal/login](https://masker-voice.fly.dev/portal/login). Click **Sign in with GitHub**.
+  </Step>
+  <Step title="GitHub asks for permission">
+    GitHub shows you the standard OAuth consent screen for the **Masker** app. Masker requests:
+    - `read:user` — your public profile (used for display).
+    - `user:email` — your primary email (used as your account identifier).
+
+    Masker does not request `repo`, `gist`, or any write scopes. You can revoke access any time at [github.com/settings/applications](https://github.com/settings/applications).
+  </Step>
+  <Step title="GitHub redirects back to Masker">
+    GitHub posts a code to `/api/v1/auth/github/callback`. Masker exchanges the code for a token, fetches your email, finds-or-creates your user row, and sets a session cookie.
+  </Step>
+  <Step title="You land on the dashboard">
+    First sign-in: you see the empty-state dashboard with "Connect your first agent."
+    Returning users: you see your agents and recent sessions.
+  </Step>
+</Steps>
+
+## What's stored
+
+After sign-in, the `users` table contains:
+
+| Column | Value |
+| --- | --- |
+| `id` | UUID generated at first sign-in. |
+| `github_id` | Your numeric GitHub user ID (used for OAuth lookups). |
+| `email` | Your GitHub primary email. |
+| `created_at` | First sign-in timestamp. |
+
+Masker does not store your name, avatar URL, or any other GitHub profile field today.
+
+## Sessions
+
+Successful sign-in sets a single cookie:
+
+| Attribute | Value |
+| --- | --- |
+| Name | `masker_session` |
+| Type | Server-side session ID, opaque to the client. |
+| `HttpOnly` | true — JS cannot read it. |
+| `Secure` | true in production (HTTPS only). |
+| `SameSite` | `Lax` — sent on top-level navigations and same-site requests. |
+| Lifetime | 30 days, sliding (extended on each authenticated request). |
+
+Sign out via the dropdown menu in the portal header, or programmatically via `POST /api/v1/auth/logout`. See [Logout](/api-reference/auth/logout).
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="GitHub redirects to '404 — Page not found'">
+    Your browser was sent to `localhost:3000` instead of the production callback. This happens if you signed in from a self-hosted Masker instance whose `MASKER_PUBLIC_URL` doesn't match the GitHub OAuth app's callback URL. See [Environment variables](/configuration/environment-variables) — set `MASKER_PUBLIC_URL` to the public URL your portal is served from.
+  </Accordion>
+  <Accordion title="'Bad credentials' from GitHub">
+    Your `GITHUB_CLIENT_ID` or `GITHUB_CLIENT_SECRET` is wrong, or the OAuth app was deleted. Recreate the OAuth app at [github.com/settings/developers](https://github.com/settings/developers) and update both values.
+  </Accordion>
+  <Accordion title="I signed in successfully but the dashboard shows me as a different user">
+    You may have multiple GitHub accounts and signed in with a different one than expected. Sign out, switch GitHub accounts, and sign back in.
+  </Accordion>
+  <Accordion title="My company doesn't allow personal GitHub accounts">
+    Email [hello@masker.dev](mailto:hello@masker.dev). For production beta, we'll add SSO (Okta / Microsoft Entra) before May 30 launch.
+  </Accordion>
+</AccordionGroup>

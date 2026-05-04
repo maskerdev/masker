@@ -1,0 +1,170 @@
+{
+  "$schema": "https://mintlify.com/schema.json",
+  "name": "Masker.dev",
+  "logo": {
+    "dark": "/logo/dark.svg",
+    "light": "/logo/light.svg"
+  },
+  "favicon": "/favicon.svg",
+  "colors": {
+    "primary": "#01696F",
+    "light": "#4F98A3",
+    "dark": "#01696F",
+    "background": {
+      "light": "#FFFFFF",
+      "dark": "#0D1117"
+    },
+    "anchors": {
+      "from": "#01696F",
+      "to": "#4F98A3"
+    }
+  },
+  "topbarLinks": [
+    {
+      "name": "Live demo",
+      "url": "https://try.masker.dev"
+    },
+    {
+      "name": "Contact",
+      "url": "mailto:hello@masker.dev"
+    }
+  ],
+  "topbarCtaButton": {
+    "name": "Open portal",
+    "url": "https://masker-voice.fly.dev/portal/login"
+  },
+  "tabs": [
+    {
+      "name": "Documentation",
+      "url": "/"
+    },
+    {
+      "name": "API Reference",
+      "url": "api-reference"
+    }
+  ],
+  "anchors": [
+    {
+      "name": "GitHub",
+      "icon": "github",
+      "url": "https://github.com/masker-dev/masker"
+    },
+    {
+      "name": "Live Demo",
+      "icon": "play",
+      "url": "https://try.masker.dev"
+    },
+    {
+      "name": "Status",
+      "icon": "signal-bars",
+      "url": "https://masker-voice.fly.dev/health"
+    }
+  ],
+  "navigation": [
+    {
+      "group": "Get started",
+      "pages": [
+        "get-started/introduction",
+        "get-started/what-is-masker",
+        "get-started/how-it-works",
+        "get-started/quickstart",
+        "get-started/beta-access"
+      ]
+    },
+    {
+      "group": "Portal",
+      "pages": [
+        "portal/overview",
+        "portal/sign-in",
+        "portal/agents",
+        "portal/sessions",
+        "portal/compliance-reports"
+      ]
+    },
+    {
+      "group": "Masking",
+      "pages": [
+        "masking/detection",
+        "masking/tokenization",
+        "masking/voice-pipeline",
+        "masking/synthetic-data"
+      ]
+    },
+    {
+      "group": "Configuration",
+      "pages": [
+        "configuration/mask-policy",
+        "configuration/environment-variables",
+        "configuration/deployment"
+      ]
+    },
+    {
+      "group": "CLI",
+      "pages": [
+        "cli/overview",
+        "cli/reference"
+      ]
+    },
+    {
+      "group": "Compliance",
+      "pages": [
+        "compliance/overview",
+        "compliance/hipaa-safe-harbor",
+        "compliance/audit-reports",
+        "compliance/data-residency"
+      ]
+    },
+    {
+      "group": "API Reference",
+      "pages": [
+        "api-reference/introduction",
+        "api-reference/authentication"
+      ]
+    },
+    {
+      "group": "Auth",
+      "pages": [
+        "api-reference/auth/start-github-oauth",
+        "api-reference/auth/oauth-callback",
+        "api-reference/auth/logout",
+        "api-reference/auth/current-user"
+      ]
+    },
+    {
+      "group": "Agents",
+      "pages": [
+        "api-reference/agents/list-agents",
+        "api-reference/agents/create-agent",
+        "api-reference/agents/get-agent",
+        "api-reference/agents/delete-agent",
+        "api-reference/agents/list-agent-sessions"
+      ]
+    },
+    {
+      "group": "Sessions",
+      "pages": [
+        "api-reference/sessions/list-sessions",
+        "api-reference/sessions/get-session",
+        "api-reference/sessions/get-session-report"
+      ]
+    },
+    {
+      "group": "Vapi integration",
+      "pages": [
+        "api-reference/vapi/proxy-chat-completions",
+        "api-reference/vapi/assistant-request-webhook"
+      ]
+    },
+    {
+      "group": "Other",
+      "pages": [
+        "api-reference/health"
+      ]
+    }
+  ],
+  "footerSocials": {
+    "twitter": "https://x.com/maskerdev",
+    "github": "https://github.com/masker-dev/masker",
+    "website": "https://masker.dev"
+  }
+}

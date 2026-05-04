@@ -1,0 +1,130 @@
+---
+title: "CLI overview"
+description: "The masker CLI for testing detection, generating reports, and admin tasks"
+---
+
+Masker ships two CLI binaries from the same repo:
+
+- **`masker`** — text/admin CLI: test detection, manage policies, generate reports, run admin queries
+- **`masker-voice`** — voice CLI: replay audio files through the masking pipeline for offline testing
+
+Both are built from the [github.com/navi25/masker](https://github.com/navi25/masker) repo:
+
+```bash
+git clone git@github.com:navi25/masker.git
+cd masker
+cargo build --release
+# binaries at target/release/masker and target/release/masker-voice
+```
+
+Or grab a pre-built release from [GitHub Releases](https://github.com/navi25/masker/releases).
+
+## When to use the CLI
+
+- **Local development.** Run masking against a local file without spinning up the API server.
+- **Policy authoring.** Iterate on `mask_policy.yaml` and see what gets caught.
+- **CI smoke tests.** Pipe known-good payloads through and assert on redaction events.
+- **Offline forensics.** Re-run a stored payload against a different policy version.
+
+You don't need the CLI for normal proxy operation — that's the API server's job.
+
+## Authentication
+
+Most CLI commands operate on local files and need no auth. For commands that talk to a remote Masker server (`--server` flag), you'll need a session cookie:
+
+```bash
+# Sign in via browser at https://masker-voice.fly.dev/portal/login
+# Copy the masker_session cookie value from devtools
+
+export MASKER_SESSION=ey...
+masker sessions list --server https://masker-voice.fly.dev
+```
+
+A scoped CLI token (long-lived, narrowly scoped) is on the May 30 roadmap.
+
+## Quick examples
+
+### Mask a file locally
+
+```bash
+echo "Hi this is Sarah Chen at (415) 555-2671" | masker mask --policy configs/mask_policy.yaml
+# {
+#   "masked": "Hi this is MSKV1.NAME.K_HEALTHCARE.... at MSKV1.PHONE.K_HEALTHCARE....",
+#   "events": [...]
+# }
+```
+
+### Run a fixture through detection only
+
+```bash
+masker detect tests/fixtures/sample-call.json --policy configs/mask_policy.yaml --json
+```
+
+### Generate a session report
+
+```bash
+masker report \
+  --server https://masker-voice.fly.dev \
+  --session-id sess_abc123 \
+  --output report.pdf
+```
+
+### Replay an audio file
+
+```bash
+masker-voice replay \
+  --input ./recording.wav \
+  --policy configs/mask_policy.yaml \
+  --asr-provider deepgram
+```
+
+## Configuration
+
+The CLI reads:
+
+- `--config <path>` flag, or
+- `MASKER_CONFIG` env var, or
+- `./masker.toml`, or
+- `~/.config/masker/config.toml`
+
+A typical config:
+
+```toml
+[server]
+url = "https://masker-voice.fly.dev"
+
+[policy]
+path = "./configs/mask_policy.yaml"
+
+[output]
+format = "json"
+color = "auto"
+```
+
+## Common patterns
+
+### Tail live sessions
+
+```bash
+masker sessions tail --server https://masker-voice.fly.dev
+```
+
+Streams session-completed events to stdout in real time. Useful while debugging a flaky integration.
+
+### Diff two policies
+
+```bash
+masker policy diff configs/mask_policy.yaml configs/mask_policy_v2.yaml
+```
+
+Shows what would change in detection — added entities, threshold changes, action changes.
+
+### Validate a policy
+
+```bash
+masker policy validate configs/mask_policy.yaml
+```
+
+Catches `unknown_kid`, `invalid_pass`, `missing_entity` errors before deploy.
+
+See the full [reference](/cli/reference) for every command.

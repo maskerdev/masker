@@ -1,0 +1,58 @@
+---
+title: "List agents"
+api: "GET /api/v1/agents"
+description: "List all agents in the current account"
+---
+
+## Endpoint
+
+```
+GET /api/v1/agents
+```
+
+## Authentication
+
+Requires `masker_session`.
+
+## Query parameters
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| `limit` | int | `25` | Max results, up to `100` |
+| `cursor` | string | (none) | Pagination cursor from a previous response |
+| `name_contains` | string | (none) | Case-insensitive substring filter |
+
+## Request
+
+```bash
+curl -H "Cookie: masker_session=ey..." \
+  "https://masker-voice.fly.dev/api/v1/agents?limit=50"
+```
+
+## Response
+
+```json
+{
+  "data": [
+    {
+      "id": "agt_01HYZ...",
+      "name": "appointment-bot-prod",
+      "upstream": "openai:gpt-4o-mini",
+      "tokenization": "vault-deterministic",
+      "policy_name": "healthcare-default",
+      "policy_version": 1,
+      "proxy_url": "https://masker-voice.fly.dev/proxy/agt_01HYZ.../v1/chat/completions",
+      "webhook_url": "https://masker-voice.fly.dev/vapi/webhook/agt_01HYZ...",
+      "created_at": "2026-04-15T10:22:11Z",
+      "session_count_24h": 247
+    }
+  ],
+  "next_cursor": null
+}
+```
+
+## Errors
+
+| Status | Code | Description |
+| --- | --- | --- |
+| `401` | `unauthenticated` | Missing session |

@@ -1,0 +1,183 @@
+---
+title: "Mask policy"
+description: "Schema for configs/mask_policy.yaml — what to detect, how to tokenize, what to log"
+---
+
+A **mask policy** is the YAML file that tells Masker:
+
+- Which entity kinds to detect
+- Which detection passes to run for each kind
+- How to replace each kind (tokenize, redact, passthrough)
+- Which `kid` (key ID) to use
+- Pseudonymization budget (ε) and confidence thresholds
+
+The default policy ships at [`configs/mask_policy.yaml`](https://github.com/navi25/masker/blob/main/configs/mask_policy.yaml) and is named `healthcare-default`.
+
+## Full schema
+
+```yaml
+name: healthcare-default
+version: 1
+description: |
+  HIPAA Safe Harbor coverage for voice AI agents in healthcare.
+  Covers 9 of 18 categories fully, 3 partially.
+
+# Default key ID for tokenization
+kid: K_HEALTHCARE
+
+# Differential privacy budget for surrogate / synthetic generation
+epsilon: 0.5
+
+# Default tokenization scheme
+tokenization: vault-deterministic   # or: reversible-aead | synthetic
+
+# Detection passes — order matters
+passes:
+  - regex
+  - gemma           # NER pass; comment out for fastest path
+  # - diarize        # auto-enabled for audio webhooks
+
+# Per-entity rules
+entities:
+
+  PHONE:
+    enabled: true
+    regex: true
+    ner: true
+    confidence_threshold: 0.6
+    action: tokenize
+
+  SSN:
+    enabled: true
+    regex: true
+    ner: false        # SSN is fully covered by regex
+    confidence_threshold: 0.0
+    action: tokenize
+
+  NAME:
+    enabled: true
+    regex: false      # names don't match regex well
+    ner: true
+    confidence_threshold: 0.7
+    action: tokenize
+
+  EMAIL:
+    enabled: true
+    regex: true
+    ner: false
+    confidence_threshold: 0.0
+    action: tokenize
+
+  DOB:
+    enabled: true
+    regex: true
+    ner: true
+    confidence_threshold: 0.5
+    action: tokenize
+
+  ADDRESS:
+    enabled: true
+    regex: true       # ZIP, street patterns
+    ner: true         # full address recognition
+    confidence_threshold: 0.6
+    action: tokenize
+
+  MRN:
+    enabled: true
+    regex: true
+    ner: true
+    confidence_threshold: 0.6
+    action: tokenize
+
+  ACCOUNT:
+    enabled: true
+    regex: true
+    ner: true
+    confidence_threshold: 0.7
+    action: tokenize
+
+  IP_ADDRESS:
+    enabled: true
+    regex: true
+    ner: false
+    confidence_threshold: 0.0
+    action: redact    # IPs aren't useful to the LLM, just kill them
+
+# Audit settings
+audit:
+  log_events: true
+  log_payloads: false   # off by default — opt in per agent
+  retention_days: 2555  # 7 years for HIPAA
+```
+
+## Field reference
+
+### Top-level
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | yes | Unique policy name. Referenced by agents. |
+| `version` | int | yes | Schema version. Currently `1`. |
+| `description` | string | no | Free-form description, shown in portal. |
+| `kid` | string | yes | Default key ID for tokenization. Must match an env var `MASKER_KEY_<kid>`. |
+| `epsilon` | float | no | Differential privacy budget for surrogates. Defaults to `0.5`. |
+| `tokenization` | enum | yes | One of `vault-deterministic`, `reversible-aead`, `synthetic`. |
+| `passes` | list | yes | Ordered list of detection passes to run. |
+| `entities` | map | yes | Per-kind rules. See below. |
+| `audit` | map | no | Audit log behavior. |
+
+### Per-entity
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | bool | `true` | Master switch for this kind. |
+| `regex` | bool | `true` | Run Pass 1 regex for this kind. |
+| `ner` | bool | `true` | Run Pass 2 NER for this kind. |
+| `confidence_threshold` | float | `0.6` | NER hits below this are dropped. |
+| `action` | enum | `tokenize` | `tokenize`, `redact`, or `passthrough`. |
+
+### Audit
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `log_events` | bool | `true` | Write per-redaction events to the audit log. |
+| `log_payloads` | bool | `false` | **Encrypted** payload retention. Off by default. |
+| `retention_days` | int | `2555` | Audit log retention. 7 years is the HIPAA minimum. |
+
+## Loading and reloading
+
+Masker reads `MASKER_POLICY_PATH` at boot (defaults to `configs/mask_policy.yaml`). To reload without a restart:
+
+```bash
+curl -X POST https://masker-voice.fly.dev/api/v1/admin/policy/reload \
+  -H "Cookie: masker_session=..."
+```
+
+The reload is atomic — in-flight requests complete on the old policy, new requests pick up the new one.
+
+## Per-agent overrides
+
+Agents inherit the global policy by default. To override, attach a policy file when creating the agent:
+
+```bash
+curl -X POST https://masker-voice.fly.dev/api/v1/agents \
+  -H "Cookie: masker_session=..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "billing-bot",
+    "upstream": "openai:gpt-4o-mini",
+    "policy_yaml": "<contents of custom-policy.yaml>"
+  }'
+```
+
+The custom YAML is stored alongside the agent and loaded for that agent only.
+
+## Validation
+
+Masker validates the policy at load time. Common errors:
+
+- `unknown_kid` — the policy references a `kid` that has no matching `MASKER_KEY_<kid>` env var
+- `invalid_pass` — the `passes` list contains a name Masker doesn't recognize
+- `missing_entity` — an entity kind referenced in `passes` is not declared under `entities`
+
+Validation errors prevent boot in production mode. In dev mode (`MASKER_DEV=1`) Masker logs and falls through to defaults.

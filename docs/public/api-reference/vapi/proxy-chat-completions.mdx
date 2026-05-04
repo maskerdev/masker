@@ -1,0 +1,97 @@
+---
+title: "Proxy chat completions"
+api: "POST /proxy/{agent_id}/v1/chat/completions"
+description: "OpenAI-compatible chat completions endpoint that masks PHI before forwarding"
+---
+
+This is the **integration endpoint** — the URL you put in your voice platform's "custom LLM" field. It speaks the OpenAI [chat completions](https://platform.openai.com/docs/api-reference/chat) API exactly, so any client that talks to OpenAI can talk to Masker without code changes.
+
+## Endpoint
+
+```
+POST /proxy/{agent_id}/v1/chat/completions
+```
+
+Note: this endpoint sits **outside** the `/api/v1` namespace because it's called by external systems with their own conventions.
+
+## Path parameters
+
+| Param | Type | Description |
+| --- | --- | --- |
+| `agent_id` | string | Masker agent ID, e.g. `agt_01HYZ...` |
+
+## Authentication
+
+This endpoint is **not** authenticated by `masker_session` cookie (the voice platform calling it doesn't have one). Instead, it relies on:
+
+- The `agent_id` in the URL acting as a shared secret (treat it like an API key)
+- HMAC signature verification of the request body, when configured (e.g. Vapi's Server URL Secret + `MASKER_VAPI_WEBHOOK_SECRET`)
+
+For high-security deploys, run Masker inside your VPC and put the proxy URL behind your existing auth (mTLS, IP allowlist, etc.).
+
+## Request body
+
+Standard OpenAI chat completions request. The most common fields:
+
+```json
+{
+  "model": "gpt-4o-mini",
+  "messages": [
+    {"role": "system", "content": "You are a helpful healthcare assistant."},
+    {"role": "user", "content": "Hi, this is Sarah Chen, my number is 415-555-2671..."}
+  ],
+  "stream": true,
+  "temperature": 0.4,
+  "max_tokens": 512,
+  "tools": [...],
+  "tool_choice": "auto"
+}
+```
+
+Masker accepts every field OpenAI accepts. Two notes:
+
+- **`model`** in the request is honored if it's compatible with the agent's configured `upstream`. If the request asks for a model the agent isn't allowed to use, Masker returns `422 model_not_allowed`.
+- **`stream: true`** is fully supported. Response chunks are scanned for tokens and rehydrated inline.
+
+## Behavior
+
+1. Receive request body
+2. Mask all messages (`messages[*].content`, tool descriptions, function names containing PHI)
+3. Forward masked body to the upstream provider
+4. Stream or buffer the response
+5. Rehydrate any tokens in the response back to original values
+6. Return masked-then-rehydrated stream / response to the caller
+
+## Response
+
+Identical shape to OpenAI's response, with PHI tokens rehydrated. Streaming responses use Server-Sent Events (`text/event-stream`).
+
+## Latency
+
+Typical added latency: **45–95 ms** end-to-end. See [Voice pipeline](/masking/voice-pipeline) for breakdown.
+
+## Errors
+
+| Status | Code | Description |
+| --- | --- | --- |
+| `401` | `bad_signature` | HMAC verification failed (when configured) |
+| `404` | `agent_not_found` | Bad `agent_id` |
+| `422` | `model_not_allowed` | Request `model` doesn't match agent's `upstream` |
+| `429` | `rate_limited` | Account or agent quota exceeded |
+| `502` | `upstream_error` | The upstream LLM returned an error; passed through |
+| `504` | `upstream_timeout` | `MASKER_UPSTREAM_TIMEOUT_MS` exceeded |
+
+Errors are returned in OpenAI-compatible shape so existing clients handle them naturally.
+
+## Example — Vapi
+
+In your Vapi assistant settings:
+
+- **Custom LLM URL:** `https://masker-voice.fly.dev/proxy/agt_01HYZ.../v1/chat/completions`
+- **Model:** `gpt-4o-mini` (whatever you want; must match the agent's `upstream`)
+
+That's the full integration. No code change in your Vapi setup, no SDK install, no spec rewrite.
+
+## Example — Bolna and Retell
+
+Identical pattern. Drop the proxy URL into the platform's "custom LLM endpoint" field. They both call this in OpenAI shape, so it works as-is.

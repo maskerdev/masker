@@ -1,0 +1,68 @@
+---
+title: "List agent sessions"
+api: "GET /api/v1/agents/{id}/sessions"
+description: "List sessions for one agent"
+---
+
+Lists sessions scoped to a single agent. Same shape as [List sessions](/api-reference/sessions/list-sessions), but pre-filtered by `agent_id`.
+
+## Endpoint
+
+```
+GET /api/v1/agents/{id}/sessions
+```
+
+## Authentication
+
+Requires `masker_session`.
+
+## Path parameters
+
+| Param | Type | Description |
+| --- | --- | --- |
+| `id` | string | Agent ID |
+
+## Query parameters
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| `limit` | int | `25` | Up to `100` |
+| `cursor` | string | (none) | Pagination cursor |
+| `since` | string | `24h` | Duration string: `1h`, `24h`, `7d`, `30d`, or ISO timestamp |
+| `status` | enum | (any) | `ok`, `error`, `partial` |
+| `min_redactions` | int | `0` | Only sessions with at least this many redactions |
+
+## Request
+
+```bash
+curl -H "Cookie: masker_session=ey..." \
+  "https://masker-voice.fly.dev/api/v1/agents/agt_01HYZ.../sessions?since=7d&limit=100"
+```
+
+## Response
+
+```json
+{
+  "data": [
+    {
+      "id": "sess_01HYZ...",
+      "agent_id": "agt_01HYZ...",
+      "started_at": "2026-05-03T21:14:32Z",
+      "ended_at": "2026-05-03T21:14:32.794Z",
+      "duration_ms": 794,
+      "status": "ok",
+      "redaction_count": 4,
+      "redactions_by_kind": {"PHONE": 1, "NAME": 2, "DOB": 1}
+    }
+  ],
+  "next_cursor": "eyJ..."
+}
+```
+
+## Errors
+
+| Status | Code | Description |
+| --- | --- | --- |
+| `401` | `unauthenticated` | Missing session |
+| `404` | `agent_not_found` | Agent doesn't exist or isn't in this account |
+| `422` | `validation_failed` | Bad query parameter (e.g. malformed `since`) |

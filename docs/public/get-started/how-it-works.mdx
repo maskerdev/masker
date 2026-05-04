@@ -1,0 +1,123 @@
+---
+title: "How it works"
+description: "The end-to-end request path — from Vapi to your LLM and back."
+---
+
+## The 30-second version
+
+```
+Caller ↔ Vapi ──► Masker (your proxy) ──► OpenAI ──► Masker ──► Vapi ↔ Caller
+                  │                       │         │
+                  detect + tokenize        │         rehydrate
+                                           LLM sees only tokens
+```
+
+You change one URL in Vapi (the Custom LLM URL on your assistant). Vapi forwards every chat completion to Masker instead of to OpenAI directly. Masker tokenizes PHI, forwards the masked prompt to your LLM, receives the masked response, rehydrates the tokens, and returns the cleaned response to Vapi. Vapi never knows the difference. Your LLM provider's logs only ever see tokens.
+
+## The full request path
+
+When a Vapi assistant is configured to use Masker as its Custom LLM, every conversation turn flows through this pipeline:
+
+<Steps>
+  <Step title="Caller speaks">
+    Vapi handles the phone connection, runs speech-to-text (Deepgram by default), and assembles a chat-completions request with the conversation history.
+  </Step>
+  <Step title="Vapi POSTs to Masker">
+    Vapi sends the request to your per-agent Masker URL:
+    ```
+    POST https://masker-voice.fly.dev/proxy/{agent_id}/v1/chat/completions
+    ```
+    The `{agent_id}` is unique to your Vapi assistant — created when you connect Vapi in the [portal](/portal/agents).
+  </Step>
+  <Step title="Masker detects and tokenizes">
+    Masker runs a [two-pass detection pipeline](/masking/detection) over the request body:
+    - **Pass 1:** regex for structured PHI (SSN, phone, email, ZIP, DOB, MRN, account numbers).
+    - **Pass 2:** Gemma-4 NER for unstructured PHI (person names, organizations, locations, medical terms).
+
+    Each detected span is replaced with a deterministic token — `MSKV1.person_name.K_HEALTHCARE.a3f9...` for vault-deterministic mode, or `MSK1....` for AEAD mode. The original value goes into the SQLite vault keyed by the session ID.
+  </Step>
+  <Step title="Masker forwards to the LLM">
+    The masked request is forwarded to your configured upstream LLM. Today: OpenAI (`gpt-4o-mini` by default) or a stub backend for testing. Anthropic and self-hosted endpoints are on the roadmap.
+  </Step>
+  <Step title="LLM responds with tokens">
+    The LLM treats tokens as opaque strings. A typical response looks like:
+    ```
+    "Thanks, MSKV1.person_name.K_HEALTHCARE.a3f9. I have your appointment booked for MSKV1.dob.K_HEALTHCARE.b7c2."
+    ```
+  </Step>
+  <Step title="Masker rehydrates">
+    Masker walks the response, finds every token, looks it up in the per-session vault, and substitutes the original value back in. The result:
+    ```
+    "Thanks, John. I have your appointment booked for March 14th."
+    ```
+  </Step>
+  <Step title="Vapi reads the response to the caller">
+    Vapi pipes the rehydrated text into TTS (ElevenLabs by default) and the caller hears a normal response.
+  </Step>
+  <Step title="Masker writes the audit record">
+    At the same time, Masker persists a [session record](/portal/sessions) (raw + masked transcripts, detection details, BAA chain) and generates the [signed compliance report](/compliance/audit-reports).
+  </Step>
+</Steps>
+
+## What lives where
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Your control                                            │
+│  • Vapi assistant config (Custom LLM URL → Masker)       │
+│  • OpenAI key (held by Masker, never sent to Vapi)       │
+└──────────────────────────────────────────────────────────┘
+                  │
+┌──────────────────▼───────────────────────────────────────┐
+│  Masker (masker-voice.fly.dev — managed beta)            │
+│  /portal/*                ← Next.js SPA (auth via GitHub)│
+│  /api/v1/*                ← REST API for the portal      │
+│  /proxy/:agent_id/...     ← Vapi → LLM proxy             │
+│  /vapi/webhook/:agent_id  ← Vapi assistant-request hook  │
+│                                                          │
+│  Storage (SQLite on Fly volume):                         │
+│  • users · agents · call_sessions                        │
+│  • token vault (HMAC-SHA256 keys, AES-256-GCM-SIV blobs) │
+└──────────────────┬───────────────────────────────────────┘
+                  │
+┌──────────────────▼───────────────────────────────────────┐
+│  Upstream LLM (your choice)                              │
+│  • OpenAI gpt-4o-mini (default)                          │
+│  • OpenAI gpt-4o, gpt-4-turbo                            │
+│  • Stub backend (testing)                                │
+└──────────────────────────────────────────────────────────┘
+```
+
+For self-hosted deployments (Rust container in your VPC), the architecture is identical except the `masker-voice.fly.dev` box runs in your AWS / GCP / on-prem environment. See [Deployment](/configuration/deployment).
+
+## Latency budget
+
+A typical masked turn adds **45–95 ms** of overhead vs. calling OpenAI directly:
+
+| Stage | Typical latency |
+| --- | --- |
+| Detection — regex (Pass 1) | < 1 ms |
+| Detection — Gemma-4 NER (Pass 2) | 20–50 ms |
+| Tokenization + vault write | 2–5 ms |
+| Rehydration on response | < 5 ms |
+| Network hop overhead (Vapi → Masker) | 15–30 ms |
+| **Total added latency** | **45–95 ms** |
+
+This is well inside Vapi's first-token-latency budget (< 1500 ms typical) and is invisible to callers in real-time conversation. If you measure a higher overhead in your environment, that's a bug — file it at [hello@masker.dev](mailto:hello@masker.dev).
+
+## What to read next
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/get-started/quickstart">
+    First masked call in five minutes.
+  </Card>
+  <Card title="Detection pipeline" icon="magnifying-glass" href="/masking/detection">
+    The full two-pass detection pipeline — regex patterns, NER prompts, overlap resolution.
+  </Card>
+  <Card title="Tokenization" icon="key" href="/masking/tokenization">
+    Vault-deterministic vs. reversible AEAD modes — when to use which.
+  </Card>
+  <Card title="Audit reports" icon="file-shield" href="/compliance/audit-reports">
+    What the per-session signed report contains and how to verify it.
+  </Card>
+</CardGroup>

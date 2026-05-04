@@ -1,0 +1,154 @@
+---
+title: "Deployment"
+description: "Run Masker in your VPC or on the Masker-managed cloud"
+---
+
+You have three options:
+
+| Option | When to pick it | BAA |
+| --- | --- | --- |
+| **Masker hosted (Fly.io US-West)** | Pilots, demos, anyone without a HIPAA program yet | Available on production beta |
+| **Customer VPC (recommended)** | Production, regulated environments, anyone with their own cloud account | Not needed — PHI never leaves your VPC |
+| **Air-gapped / on-prem** | Hospitals, DoD, custom security postures | Not needed — Masker doesn't reach the internet |
+
+## Option 1 — Masker hosted
+
+This is what runs at [masker-voice.fly.dev](https://masker-voice.fly.dev). You don't deploy anything.
+
+- Sign in at [the portal](https://masker-voice.fly.dev/portal/login)
+- Create an agent, get a proxy URL
+- Drop the URL into your voice platform
+
+**Region:** US-West (Fly.io `sea` and `sjc`).
+**Encryption at rest:** AES-256, Fly volumes.
+**BAA:** offered to all production beta customers.
+
+This is the fastest path. It is also the path with the most external dependencies. For anything that touches real patient data you should plan to migrate to your VPC before going live.
+
+## Option 2 — Customer VPC (Docker)
+
+The Masker Rust binary is shipped as a Docker image. You can run it anywhere that runs containers.
+
+```bash
+docker run -d \
+  --name masker \
+  -p 8080:8080 \
+  -v masker-data:/data \
+  -e MASKER_LISTEN_ADDR=0.0.0.0:8080 \
+  -e MASKER_PUBLIC_URL=https://masker.your-vpc.example \
+  -e MASKER_DATABASE_URL=sqlite:///data/masker.db \
+  -e MASKER_OPENAI_API_KEY=$OPENAI_API_KEY \
+  --env-file ./masker.secrets.env \
+  ghcr.io/masker-dev/masker:latest
+```
+
+`masker.secrets.env` should contain at minimum:
+
+```
+MASKER_GITHUB_CLIENT_ID=...
+MASKER_GITHUB_CLIENT_SECRET=...
+MASKER_SESSION_SECRET=...
+MASKER_KEY_K_HEALTHCARE=...
+MASKER_AUDIT_HMAC_KEY=...
+```
+
+Front the container with your load balancer of choice (ALB, GCLB, nginx). Terminate TLS at the LB. Masker speaks plain HTTP inside the VPC.
+
+### Kubernetes (EKS / GKE / AKS)
+
+Sample deployment is in the repo at [`deploy/k8s/`](https://github.com/navi25/masker/tree/main/deploy/k8s). It includes:
+
+- `Deployment` with sensible resource requests (1 CPU, 2 GB RAM, 1 GPU optional for NER)
+- `Service` and `Ingress` with TLS
+- `PersistentVolumeClaim` for `/data`
+- `Secret` and `ConfigMap` separation
+- `HorizontalPodAutoscaler` based on request latency
+
+For multi-replica deploys, use `tokenization: reversible-aead` in the mask policy to avoid sharing a SQLite vault. Or front a Postgres vault via `MASKER_DATABASE_URL`.
+
+### Fly.io (your own org)
+
+Same approach as the Masker-hosted deploy, but in your Fly.io account. Sample `fly.toml`:
+
+```toml
+app = "masker-yourname"
+primary_region = "sea"
+
+[build]
+  image = "ghcr.io/masker-dev/masker:latest"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+
+[[mounts]]
+  source = "masker_data"
+  destination = "/data"
+
+[env]
+  MASKER_LISTEN_ADDR = "0.0.0.0:8080"
+  MASKER_PUBLIC_URL = "https://masker-yourname.fly.dev"
+  MASKER_DATABASE_URL = "sqlite:///data/masker.db"
+```
+
+Then `flyctl secrets set` for the secrets.
+
+## Option 3 — Air-gapped / on-prem
+
+Masker has zero **required** outbound calls except to your chosen upstream LLM. If your environment runs the LLM internally (Ollama, vLLM, your own Azure OpenAI tenant), Masker can run fully air-gapped.
+
+Set:
+
+```
+MASKER_OPENAI_BASE_URL=https://internal-llm.your-vpc.example
+MASKER_OPENAI_API_KEY=internal-token
+```
+
+Masker speaks the OpenAI chat-completions API, so any compatible upstream works.
+
+The Gemma-4 NER model ships **inside the container**. No model fetches at runtime. No telemetry. The container does not phone home.
+
+For onprem: ask us about the offline activation flow at [hello@masker.dev](mailto:hello@masker.dev). It uses a signed license file in lieu of GitHub OAuth for portal access.
+
+## Health checks
+
+Every Masker deploy exposes:
+
+```
+GET /health
+```
+
+Returns `200 OK` with `{"status":"ok","version":"x.y.z","db":"ok","vault":"ok","upstream":"ok"}`. Wire this into your load balancer.
+
+## Upgrades
+
+Masker follows semver. Minor and patch versions are drop-in upgrades. Major versions ship a migration note in the release.
+
+To upgrade:
+
+```bash
+docker pull ghcr.io/masker-dev/masker:latest
+docker stop masker && docker rm masker
+docker run ...   # same args, new image
+```
+
+DB migrations run automatically at boot. The vault format is forward-compatible across all `MSKV1.*` tokens.
+
+## Observability
+
+If `MASKER_METRICS_ADDR` is set, Masker exposes Prometheus metrics:
+
+- `masker_requests_total{agent, status}`
+- `masker_request_duration_seconds{stage}` — `detection`, `tokenize`, `upstream`, `rehydrate`
+- `masker_redactions_total{kind, pass}`
+- `masker_vault_size_bytes`
+
+Logs are JSON to stdout (default). Forward with your existing pipeline (CloudWatch, Datadog, GCP Logging, Loki).
+
+## What we don't ship
+
+Honest list:
+
+- **No Helm chart yet.** Raw Kubernetes manifests only. Helm chart is on the May 30 roadmap.
+- **No Terraform module yet.** Same timeline.
+- **No managed control plane.** Each Masker deploy is independent. Multi-tenant control plane is a 2027 conversation.
