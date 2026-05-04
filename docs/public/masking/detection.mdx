@@ -1,0 +1,113 @@
+---
+title: "Detection"
+description: "How Masker finds PHI and PII before it reaches the LLM"
+---
+
+Detection is Masker's first job: given a payload heading to a language model, find every span that looks like a regulated identifier and mark it for replacement.
+
+We run detection in **passes**. Each pass is a different detector with different cost, latency, and recall characteristics. The output of one pass is the input to the next.
+
+## Two passes for text, three for audio
+
+### Pass 1 — Regex catalogue
+
+A curated set of regular expressions for the **deterministic** PHI/PII shapes:
+
+- Phone numbers (E.164, North American, international forms)
+- Social Security Numbers (US format, with and without dashes)
+- Email addresses (RFC 5322 simplified)
+- Medical record numbers (configurable per-tenant pattern)
+- Dates (MM/DD/YYYY, ISO 8601, written forms)
+- ZIP codes (US 5-digit and ZIP+4)
+- IP addresses (v4 and v6)
+- URLs that contain identifying paths
+- Account, license, vehicle, device identifiers
+
+**Latency:** sub-millisecond per request. Runs on every payload, no exceptions.
+
+**Recall:** very high for shapes it knows. Misses things that look like prose ("my number is five-five-five-one-two-three-four-five-six-seven").
+
+### Pass 2 — Gemma-4 NER
+
+After regex, Masker runs the redacted-but-not-yet-tokenized payload through a fine-tuned **Gemma-4** named-entity recognition model. This catches:
+
+- Names ("Dr. Sarah Chen", "Mr. Johnson")
+- Geographic subdivisions smaller than a state
+- Health plan beneficiary numbers in unusual formats
+- Account numbers Masker hasn't seen before
+- Diagnoses, procedures, and other clinical phrases that map to identifying entities
+- Numbers spoken as words
+
+The model was fine-tuned on three corpora:
+
+- **i2b2 / n2c2** — de-identified clinical notes (the gold standard)
+- **MedDialog** — patient-doctor dialogue
+- **Switchboard** — conversational phone speech
+
+**Latency:** 30–80 ms on Masker's default GPU pool. Runs in-region (US-West today, US-East and EU on roadmap).
+
+**Recall:** materially higher than regex on conversational input. Also catches mis-spelled or transliterated names.
+
+### Pass 3 — Diarization (audio only)
+
+When Masker is in the audio path (transcript-side via the Vapi webhook), it adds a diarization pass before regex. This:
+
+- Separates speakers (caller vs agent)
+- Tags each turn with speaker ID and timing
+- Lets the policy mask **the patient's voice content** while leaving the agent's prompts intact
+
+This is what makes reports useful: "Across 1,247 calls, the patient spoke 8,930 turns. We redacted PHI in 4,118 of them."
+
+## Output of detection
+
+Each detected span becomes an event:
+
+```json
+{
+  "pass": "gemma",
+  "kind": "NAME",
+  "span": [142, 156],
+  "text": "Sarah Chen",
+  "confidence": 0.94
+}
+```
+
+The `text` field is **only** held in memory long enough to call the tokenizer. It's never written to disk.
+
+## Tuning detection
+
+Each entity kind has three knobs in `mask_policy.yaml`:
+
+```yaml
+entities:
+  PHONE:
+    enabled: true
+    regex: true
+    ner: true
+    confidence_threshold: 0.6
+    action: tokenize     # tokenize | redact | passthrough
+```
+
+- **regex / ner**: turn each pass on or off per entity kind
+- **confidence_threshold**: NER hits below this are dropped
+- **action**:
+  - `tokenize` — replace with a reversible token (the default)
+  - `redact` — replace with `[REDACTED:KIND]`, no rehydration
+  - `passthrough` — log the detection but don't replace (useful for testing)
+
+See [Mask policy](/configuration/mask-policy) for the full schema.
+
+## Honest about coverage
+
+Masker covers **9 of 18** HIPAA Safe Harbor identifier categories fully today. Three more are partial. The remaining six are on the May 30 production roadmap.
+
+We don't claim full Safe Harbor coverage we don't have. Every compliance report shows the actual coverage at generation time. See [HIPAA Safe Harbor](/compliance/hipaa-safe-harbor) for the current matrix.
+
+## Privacy properties
+
+- Original PHI is **never logged** — only spans, kinds, and resulting tokens
+- Detection runs **inside your VPC** (or in Masker's HIPAA-eligible region for hosted deploys)
+- The Gemma-4 model is shipped inside the Rust container — **no external API calls** for detection
+- The model is loaded once at boot and held in memory; no per-request model fetches
+
+This means you can audit detection by reading the source. The repo is at [github.com/navi25/masker](https://github.com/navi25/masker).

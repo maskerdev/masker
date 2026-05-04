@@ -1,0 +1,106 @@
+---
+title: "Tokenization"
+description: "How Masker replaces PHI with reversible tokens"
+---
+
+Once detection has marked a span, Masker replaces it with a **token**. A token is:
+
+- **Format-stable** — the same shape regardless of input length, so the model isn't surprised
+- **Type-aware** — the LLM can still tell a phone from a name from a date
+- **Reversible** — Masker can rehydrate the original on the response leg
+- **Non-revealing** — given only the token, you cannot recover the original
+
+Masker offers two tokenization schemes. You pick one per agent.
+
+## Token format
+
+All tokens follow this shape:
+
+```
+{scheme}.{kind}.{kid}.{value}
+```
+
+| Field | Meaning | Example |
+| --- | --- | --- |
+| `scheme` | Versioned scheme identifier | `MSKV1` (vault) or `MSK1` (AEAD) |
+| `kind` | Entity type | `PHONE`, `NAME`, `SSN`, `MRN`, `EMAIL`, `DOB` |
+| `kid` | Key ID — which key was used | `K_HEALTHCARE` |
+| `value` | The opaque token body | base32, ~22 chars |
+
+A masked phone number looks like:
+
+```
+MSKV1.PHONE.K_HEALTHCARE.A1B2C3D4E5F6G7H8I9J0KL
+```
+
+The LLM sees this in place of the phone. It still recognizes "this is a phone-shaped argument," generates a reasonable response, and Masker rehydrates the real number when streaming back to the voice agent.
+
+## Scheme 1 — Vault deterministic (default)
+
+**Algorithm:** HMAC-SHA256 of `(kid_secret || normalized_input)` → first 16 bytes → base32-encoded.
+
+**Storage:** A row is written to a SQLite vault on the Fly volume mounted at `/data/vault.db`.
+
+**Properties:**
+
+- **Deterministic** — the same input always produces the same token, within the same `kid`. Useful when the LLM needs to recognize "this is the same person as in the previous turn."
+- **Reversible** — Masker looks up the token in the vault to rehydrate.
+- **Per-agent isolation** — different agents can use different `kid`s, so token namespaces don't collide.
+- **Vault-bound** — if the vault is lost, tokens become opaque forever. (This is a feature when you want hard erasure.)
+
+Use vault-deterministic when you want **same-value-same-token** behavior across a session, for example so the LLM can refer to "the patient" consistently across turns.
+
+## Scheme 2 — Reversible AEAD
+
+**Algorithm:** AES-256-GCM-SIV with a 256-bit key derived per `kid`.
+
+**Storage:** None. The ciphertext **is** the token.
+
+**Properties:**
+
+- **Self-contained** — no vault lookup needed to rehydrate, just decrypt.
+- **Non-deterministic** — the same input produces different tokens each time (because of the SIV nonce).
+- **Stateless** — works in horizontally scaled deployments without a shared vault.
+- **Key-bound** — if the `kid` key is rotated and old keys are dropped, old tokens become unreadable.
+
+Use reversible AEAD when you want **stateless** rehydration or you can't ship a SQLite volume to every region.
+
+## Picking a scheme
+
+| You want… | Pick |
+| --- | --- |
+| Same value → same token (consistent reference within a call) | **Vault deterministic** |
+| No shared state across regions | **Reversible AEAD** |
+| Hard erasure (drop the vault, tokens are dead forever) | **Vault deterministic** |
+| Self-describing tokens that survive restarts | **Reversible AEAD** |
+| Default, healthcare voice | **Vault deterministic** |
+
+The `healthcare-default` policy ships with **vault-deterministic** tokenization. You can change it per agent in the portal or via the create-agent API.
+
+## Rehydration
+
+On the response leg, Masker walks the LLM's output looking for tokens of the form `MSK*.*.*.*`. For each match:
+
+- **Vault deterministic:** look up the value in `/data/vault.db`, replace inline.
+- **Reversible AEAD:** decrypt with the `kid` key, replace inline.
+
+If a token can't be rehydrated (key rotated out, vault row missing, malformed token), Masker emits a `rehydration_failed` event and replaces with `[REDACTED:KIND]`. The audit log records the failure.
+
+## Key management
+
+Each `kid` is a logical key identifier mapped to actual key material in your environment:
+
+```
+MASKER_KEY_K_HEALTHCARE=base64(32-byte-key)
+```
+
+Multiple `kid`s can be active at once for rotation:
+
+```
+MASKER_KEY_K_HEALTHCARE=...new key...
+MASKER_KEY_K_HEALTHCARE_OLD=...previous key...
+```
+
+Masker tries the active key for new tokenization, and any registered key for rehydration. Rotate by adding a new key, switching the policy, and dropping the old key when no live tokens still reference it.
+
+For production, key material lives in your secret store of choice — Fly Secrets, AWS Secrets Manager, GCP Secret Manager, or HashiCorp Vault. Masker does not ship its own key escrow.

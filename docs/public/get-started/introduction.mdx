@@ -1,0 +1,60 @@
+---
+title: "Welcome to Masker.dev"
+description: "The privacy layer that makes voice AI safe for healthcare."
+---
+
+Masker is a HIPAA-grade privacy layer for voice AI agents. It sits between your voice platform (Vapi today; Bolna and Retell in beta) and your LLM, detects and redacts PHI and PII before any audio or text reaches the model, and rehydrates the original values on the way back so the caller's experience is unchanged.
+
+<Note>
+**Status: private beta.** The portal at [masker-voice.fly.dev](https://masker-voice.fly.dev) and the live demo at [try.masker.dev](https://try.masker.dev) are functional today. Production beta launches **May 30, 2026**. To request access, see [Beta access](/get-started/beta-access).
+</Note>
+
+## What you can do today
+
+<CardGroup cols={2}>
+  <Card title="Connect a Vapi agent" icon="phone" href="/portal/agents">
+    Sign in with GitHub, paste your Vapi key, and get a per-agent proxy URL in under two minutes.
+  </Card>
+  <Card title="See live redaction" icon="eye-slash" href="/get-started/quickstart">
+    Place a real call and watch PHI get tokenized before it reaches OpenAI — verify in OpenAI's own logs.
+  </Card>
+  <Card title="Download signed audit reports" icon="file-shield" href="/compliance/audit-reports">
+    Every session generates an Ed25519-signed compliance report with a full BAA chain.
+  </Card>
+  <Card title="Try the no-signup demo" icon="flask" href="https://try.masker.dev">
+    The hosted demo at try.masker.dev runs the full pipeline against a stub LLM — no account required.
+  </Card>
+</CardGroup>
+
+## Where to start
+
+<Steps>
+  <Step title="Read 'What is Masker?'">
+    Five minutes that explain what Masker is, what it isn't, and how it differs from detection libraries like Microsoft Presidio. [Start here](/get-started/what-is-masker).
+  </Step>
+  <Step title="Walk through the architecture">
+    [How it works](/get-started/how-it-works) shows the request path end to end — from Vapi to your LLM and back.
+  </Step>
+  <Step title="Run the quickstart">
+    [Quickstart](/get-started/quickstart) takes you from sign-in to first masked call in under five minutes.
+  </Step>
+</Steps>
+
+## Honest scope
+
+Masker is built and operated by a single founder (Navendra Jha, ex-Amazon Privacy Bar Raiser) with a small early-access cohort. These docs reflect what the product **actually does today** — not what it will do in v2. Where a feature is on the roadmap, it's marked clearly.
+
+| Feature | Status |
+| --- | --- |
+| Vapi integration via per-agent proxy URL | ✅ Live |
+| GitHub OAuth sign-in | ✅ Live |
+| Real-time PHI/PII detection (regex + Gemma-4 NER) | ✅ Live |
+| HMAC-SHA256 deterministic tokens · AES-256-GCM-SIV reversible tokens | ✅ Live |
+| HIPAA Safe Harbor coverage (9 of 18 categories fully) | 🟡 Partial — full coverage by May 30, 2026 |
+| Per-session signed compliance reports | ✅ Live |
+| Voice pipeline (STT → mask → LLM → TTS) | ✅ Live |
+| Bolna and Retell platform integrations | 🚧 In beta |
+| Self-hosted Rust container in customer VPC | 🚧 Available on request |
+| Multi-tenant teams + RBAC | 🚧 v2 |
+
+Questions or pushback on any of this? [hello@masker.dev](mailto:hello@masker.dev). We read everything.

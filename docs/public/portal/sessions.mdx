@@ -1,0 +1,94 @@
+---
+title: "Sessions"
+description: "Inspect masked traffic, redaction events, and per-call audit trails"
+---
+
+Every request that flows through a Masker proxy creates a **session**. A session captures:
+
+- The **agent** it ran on
+- **Timestamps** (start, end, latency)
+- The **redaction events** that fired (which detector, which entity kind, original span offset, token issued)
+- A pointer to the **stored payload** (encrypted, optional, configurable retention)
+
+Sessions are how you answer the question: *"What PHI did the LLM actually see?"*
+
+The honest answer should always be: nothing. Sessions are the receipt that proves it.
+
+## Sessions list
+
+At [masker-voice.fly.dev/portal/sessions](https://masker-voice.fly.dev/portal/sessions) you'll see a reverse-chronological list of recent sessions across all your agents.
+
+| Column | What it shows |
+| --- | --- |
+| **Session ID** | Click to open detail view |
+| **Agent** | Which agent handled this call |
+| **Started** | UTC timestamp |
+| **Duration** | Wall-clock latency end-to-end |
+| **Redactions** | Count of entities masked (e.g. `3 PHONE, 1 SSN, 2 NAME`) |
+| **Status** | `ok`, `error`, or `partial` (some upstream failure) |
+
+Filters: by agent, by date range, by redaction count, by status.
+
+## Session detail
+
+Click a session ID to open the detail view. You'll see four panels:
+
+### 1. Request envelope
+
+The Vapi/Bolna/Retell request as Masker received it, with PHI **highlighted** in red. This is what your voice platform sent.
+
+### 2. Masked payload
+
+The same request as the upstream LLM (e.g. OpenAI) received it. PHI is replaced with tokens like `MSKV1.PHONE.K_HEALTHCARE.a1b2c3...`.
+
+This is the receipt: it shows exactly what crossed the network boundary to OpenAI.
+
+### 3. Upstream response
+
+What the LLM returned, with tokens still in place. Useful for debugging cases where the model echoes a token back.
+
+### 4. Final response
+
+What Masker sent back to your voice platform, with tokens **rehydrated** to original values. This is what your end user heard.
+
+## Redaction events
+
+Below the four panels, the **events** table lists every detection that fired:
+
+| Field | Example |
+| --- | --- |
+| **Pass** | `regex` (Pass 1) or `gemma` (Pass 2 NER) or `diarize` (audio Pass 3) |
+| **Kind** | `PHONE`, `SSN`, `NAME`, `MRN`, `EMAIL`, `DOB`, `ADDRESS`, … |
+| **Span** | Byte offsets in the original payload |
+| **Token** | The replacement value |
+| **Confidence** | 0.0 – 1.0 (Pass 2 only) |
+
+Each event is also written to the immutable audit log on disk (HMAC-chained, append-only).
+
+## Retention
+
+By default Masker stores:
+
+- **Session metadata** (agent, timing, event counts): 90 days
+- **Encrypted payloads** (request + masked + response): **off by default** — you must opt in per agent
+- **Audit log** (event-level): 7 years (HIPAA minimum)
+
+You can shorten or lengthen these via [environment variables](/configuration/environment-variables). For pilots we recommend keeping payloads **off** until you've signed a BAA.
+
+## Compliance report from a session
+
+Every session has a one-click **Generate compliance report** button (top right of detail view). This produces a PDF showing:
+
+- Agent name, time window, total calls
+- HIPAA Safe Harbor coverage table
+- Per-entity redaction counts
+- Sample masked transcripts (PHI removed)
+- Audit log hash chain root
+
+See [Compliance reports](/portal/compliance-reports) for what's in the PDF and how to share it with auditors.
+
+## Programmatic access
+
+- [List sessions](/api-reference/sessions/list-sessions) — `GET /api/v1/sessions`
+- [Get session](/api-reference/sessions/get-session) — `GET /api/v1/sessions/:id`
+- [Get session report](/api-reference/sessions/get-session-report) — `GET /api/v1/sessions/:id/report`

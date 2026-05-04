@@ -1,0 +1,61 @@
+---
+title: "Get agent"
+api: "GET /api/v1/agents/{id}"
+description: "Fetch a single agent"
+---
+
+## Endpoint
+
+```
+GET /api/v1/agents/{id}
+```
+
+## Authentication
+
+Requires `masker_session`.
+
+## Path parameters
+
+| Param | Type | Description |
+| --- | --- | --- |
+| `id` | string | Agent ID, e.g. `agt_01HYZ...` |
+
+## Request
+
+```bash
+curl -H "Cookie: masker_session=ey..." \
+  https://masker-voice.fly.dev/api/v1/agents/agt_01HYZ...
+```
+
+## Response
+
+```json
+{
+  "agent": {
+    "id": "agt_01HYZ...",
+    "name": "appointment-bot-prod",
+    "upstream": "openai:gpt-4o-mini",
+    "tokenization": "vault-deterministic",
+    "policy_name": "healthcare-default",
+    "policy_version": 1,
+    "policy_yaml": "name: healthcare-default\nversion: 1\n...",
+    "proxy_url": "https://masker-voice.fly.dev/proxy/agt_01HYZ.../v1/chat/completions",
+    "webhook_url": "https://masker-voice.fly.dev/vapi/webhook/agt_01HYZ...",
+    "created_at": "2026-04-15T10:22:11Z",
+    "stats": {
+      "session_count_24h": 247,
+      "session_count_7d": 1834,
+      "redaction_count_24h": 1289,
+      "p50_latency_ms": 412,
+      "p95_latency_ms": 891
+    }
+  }
+}
+```
+
+## Errors
+
+| Status | Code | Description |
+| --- | --- | --- |
+| `401` | `unauthenticated` | Missing session |
+| `404` | `agent_not_found` | No such agent in this account |

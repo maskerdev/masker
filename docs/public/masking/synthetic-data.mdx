@@ -1,0 +1,102 @@
+---
+title: "Synthetic data"
+description: "Generate realistic, non-reversible surrogate data for development and analytics"
+---
+
+Sometimes you don't want to redact PHI — you want to **replace** it with realistic-looking but fictional data. This is useful for:
+
+- **Development environments** — devs need realistic transcripts to debug, without touching real PHI
+- **Analytics pipelines** — BI tools that should never see real PHI but need realistic shapes
+- **Model training** — fine-tune downstream models on data that statistically resembles production
+- **Demos and screenshots** — show what calls look like without exposing real customers
+
+This is what Masker calls **synthetic mode**.
+
+<Note>
+Synthetic data generation is in **private preview** as of the May 30 production launch. Beta customers get access on request. The API surface below may change before GA.
+</Note>
+
+## How it works
+
+Synthetic mode is a tokenization scheme, alongside vault-deterministic and reversible-AEAD. Configure it per agent:
+
+```yaml
+agents:
+  - name: dev-replay
+    upstream: stub
+    tokenization: synthetic
+    synthetic:
+      seed: 0xC0FFEE
+      preserve_locale: true
+```
+
+When detection finds an entity, instead of replacing with a token, Masker generates a **plausible surrogate**:
+
+| Original | Synthetic surrogate |
+| --- | --- |
+| Sarah Chen | Maria Lopez |
+| (415) 555-2671 | (415) 555-8423 |
+| 1990-04-12 | 1991-08-30 |
+| 123 Main St, Seattle WA 98101 | 47 Cedar Ave, Tacoma WA 98402 |
+| MRN 4827193 | MRN 8362041 |
+
+Surrogates are:
+
+- **Locale-aware** — phone numbers stay in the same country code, ZIPs stay in the same metro
+- **Type-stable** — the LLM still sees a phone where a phone was
+- **Cohort-consistent** — within a single session, "Sarah" maps to "Maria" everywhere; the LLM's reasoning is still coherent
+- **Statistically faithful** — name distributions, age distributions, geographic distributions match common public datasets (US Census, SSA names)
+
+## Determinism vs. privacy
+
+Synthetic mode has a `seed` parameter. With a fixed seed:
+
+- Synthesis is **deterministic** — same input + same seed → same surrogate
+- Useful for **replay** — a dev can re-run a problematic call and get the same fake names every time
+- **Risk:** with a known seed and a known surrogate, you can recover the original
+
+Without a seed (or with a rotated seed), synthesis is **non-reversible** — there is no path from "Maria Lopez" back to "Sarah Chen". The vault is not consulted.
+
+For production analytics use a **fresh, never-stored seed per export**. For dev environments use a fixed seed checked into your dev config (acceptable because dev sees no real PHI in the first place).
+
+## Differential privacy budget
+
+Synthetic mode honors the same `epsilon` (ε) parameter as vault-deterministic tokenization. ε controls how aggressively rare values are perturbed:
+
+- **ε = 0.5** (default for healthcare) — strong privacy, some loss of statistical detail
+- **ε = 1.0** — moderate privacy, more useful for analytics
+- **ε = 2.0** — weak privacy, only acceptable for non-PHI-adjacent data
+
+Masker's synthesis ensures that values appearing fewer than `k` times in a session window are re-sampled from the full distribution, not the empirical one. This prevents "the only Latvian-named caller" from being trivially re-identified in your synthetic export.
+
+## What synthetic mode is good for
+
+- ✓ Building dashboards on production-shaped data without PHI risk
+- ✓ Sharing transcripts with vendors who haven't signed a BAA
+- ✓ Public demos and conference talks
+- ✓ Fine-tuning small models on call transcripts
+
+## What synthetic mode is **not** for
+
+- ✗ Re-identifiable analytics — by design, you cannot get back to originals
+- ✗ Customer support — agents need real PHI to help real patients
+- ✗ Compliance reporting — auditors want to see real audit trails, not synthesized ones
+
+For those, stick with vault-deterministic or reversible-AEAD.
+
+## Programmatic synthesis
+
+You can also call synthesis as a one-shot transform, outside the proxy path:
+
+```bash
+curl -X POST https://masker-voice.fly.dev/api/v1/synthesize \
+  -H "Cookie: masker_session=..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Hi, this is Sarah Chen at 415-555-2671...",
+    "policy": "healthcare-default",
+    "seed": 12345
+  }'
+```
+
+This endpoint is gated behind the same private preview as agent-level synthetic mode. Email [hello@masker.dev](mailto:hello@masker.dev) to enable.

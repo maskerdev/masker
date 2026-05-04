@@ -1,0 +1,49 @@
+---
+title: "OAuth callback"
+api: "GET /api/v1/auth/github/callback"
+description: "Receive the GitHub OAuth code and create a session"
+---
+
+Called by GitHub at the end of the OAuth flow. You do not call this endpoint directly — GitHub redirects the user's browser here after they approve.
+
+## Endpoint
+
+```
+GET /api/v1/auth/github/callback
+```
+
+## Query parameters
+
+| Param | Type | Required | Description |
+| --- | --- | --- | --- |
+| `code` | string | yes | One-time code from GitHub |
+| `state` | string | yes | CSRF token, must match the `masker_oauth_state` cookie |
+
+## Behavior
+
+1. Validates `state` against the `masker_oauth_state` cookie. Mismatch → `400`.
+2. Exchanges `code` for a GitHub access token at `https://github.com/login/oauth/access_token`.
+3. Calls `GET https://api.github.com/user` to fetch the GitHub profile.
+4. Upserts the user row in Masker's database.
+5. Creates a new session, sets the `masker_session` cookie.
+6. Redirects to the original `redirect_to` (default `/portal`).
+
+## Response
+
+- `302` to the post-login destination on success
+- `400` if `state` is missing or doesn't match
+- `502` if GitHub's token exchange fails
+
+## On first login
+
+The first time a GitHub user signs in, Masker creates a fresh account with that user as the sole admin. Subsequent sign-ins from the same GitHub user resolve to the same account.
+
+Multi-user accounts and team invitations are on the May 30 production roadmap.
+
+## Failure modes
+
+| Symptom | Likely cause |
+| --- | --- |
+| `400 invalid_state` | Cookie stripped (incognito with cookies blocked) or expired (>10 min between start and callback) |
+| `502 oauth_exchange_failed` | GitHub OAuth app credentials misconfigured (`MASKER_GITHUB_CLIENT_*`) |
+| `500 user_upsert_failed` | Database write failed; check `request_id` and report |

@@ -1,0 +1,76 @@
+---
+title: "HIPAA Safe Harbor"
+description: "Coverage matrix for the 18 Safe Harbor identifier categories"
+---
+
+The HIPAA Privacy Rule defines two paths to de-identification: **Expert Determination** and **Safe Harbor**. Masker is built around Safe Harbor — it's the more prescriptive of the two and the one that can be audited from logs.
+
+Safe Harbor enumerates **18 identifier categories** (45 CFR §164.514(b)(2)). To qualify as de-identified under Safe Harbor, all 18 must be removed.
+
+This page is our honest current coverage matrix.
+
+## Coverage matrix
+
+| # | Category | Status | Notes |
+| --- | --- | --- | --- |
+| A | Names | ✓ Full | Pass 2 (Gemma-4 NER), high recall on conversational input |
+| B | Geographic subdivisions smaller than a state | ✓ Full | ZIP, city, street regex + NER |
+| C | Dates (more granular than year), incl. birth, admission, discharge, death | ◐ Partial | Birth/admission/discharge dates: full. Year-only on certain phrasings still passes through. |
+| D | Telephone numbers | ✓ Full | E.164 + North American + spoken-word forms |
+| E | Fax numbers | ✓ Full | Same regex as phone |
+| F | Email addresses | ✓ Full | RFC 5322 simplified |
+| G | Social Security numbers | ✓ Full | Dashed, undashed, spoken |
+| H | Medical record numbers (MRN) | ✓ Full | Tenant-configurable patterns |
+| I | Health plan beneficiary numbers | ◐ Partial | Common payer formats (Medicare, BCBS) full. Long-tail payer formats need policy customization. |
+| J | Account numbers | ✓ Full | Generic numeric + Luhn-checked |
+| K | Certificate / license numbers | ◐ Partial | Major US states' DL formats covered. Professional licenses (DEA, NPI) partial. |
+| L | Vehicle identifiers and serial numbers, including license plates | ⏳ In progress | Targeted for May 30 |
+| M | Device identifiers and serial numbers | ⏳ In progress | Targeted for May 30 |
+| N | Web URLs | ⏳ In progress | We currently only redact URLs containing query-string PHI; full-URL redaction in progress |
+| O | IP addresses | ✓ Full | v4 and v6, default action `redact` (not `tokenize`) |
+| P | Biometric identifiers (finger, voice prints) | ⏳ In progress | Voice fingerprinting not in scope today |
+| Q | Full-face photographs | N/A | Masker doesn't process images |
+| R | Any other unique identifying number, characteristic, or code | ⏳ In progress | This category is intentionally vague. We do best-effort via NER; can't claim "full" |
+
+**Tally:** 9 full, 3 partial, 5 in progress, 1 N/A.
+
+## What "full" means
+
+A category is **full** when:
+
+- All common shapes are matched by Pass 1 regex with high precision
+- All conversational forms are caught by Pass 2 NER with confidence > 0.6
+- We've validated against at least two of: i2b2/n2c2, MedDialog, Switchboard, our own benchmark set
+- Recall on our internal eval set is ≥ 95%
+
+## What "partial" means
+
+A category is **partial** when:
+
+- Common shapes work
+- Long-tail or unusual formats need policy customization (custom regex per tenant)
+- Recall on our internal eval is between 70% and 95%
+
+## What "in progress" means
+
+We've scoped the work, the eval set exists, and a target shipping date is in our internal tracker. The May 30, 2026 production launch is the date we're committing to for items L, M, N, P, R reaching at least "partial."
+
+## Why we're being this specific
+
+Most privacy products in this space claim full Safe Harbor coverage. Many of them fail honest red-team tests. We'd rather lose the deal where the prospect needs a category we don't yet cover than win it on a claim we can't defend in an audit.
+
+If your workload depends on a category we mark "partial" or "in progress," tell us. We can either:
+
+1. Accelerate that category in the roadmap (we have done this for pilot customers), or
+2. Help you scope a custom policy that hardens the partial coverage with tenant-specific regex, or
+3. Recommend you wait until we ship the missing piece.
+
+## How coverage shows up in audit reports
+
+Every compliance report includes the coverage matrix at the time the report was generated. The matrix is **not** static — when you upgrade Masker and we promote a category from partial to full, your next report shows the better coverage automatically.
+
+## Expert Determination
+
+A small number of customers prefer Expert Determination over Safe Harbor (typically because they want to retain some categories for clinical utility). Masker supports this: configure the entity actions you want as `passthrough`, document the determination separately, and the audit log captures the active policy at the time of each call.
+
+We don't provide expert determination services ourselves — that's a relationship between you and a qualified statistician.

@@ -1,0 +1,79 @@
+---
+title: "Health"
+api: "GET /health"
+description: "Health check for load balancers and uptime monitors"
+---
+
+Returns the current health of the Masker server. Designed to be hit by load balancers and uptime monitors. Unauthenticated.
+
+## Endpoint
+
+```
+GET /health
+```
+
+## Authentication
+
+None. This endpoint is public.
+
+## Request
+
+```bash
+curl https://masker-voice.fly.dev/health
+```
+
+## Response
+
+```json
+{
+  "status": "ok",
+  "version": "0.7.3",
+  "uptime_seconds": 487291,
+  "components": {
+    "db": "ok",
+    "vault": "ok",
+    "audit_log": "ok",
+    "upstream": "ok",
+    "ner_model": "ok"
+  },
+  "build": {
+    "commit": "a1b2c3d",
+    "built_at": "2026-04-29T18:14:11Z"
+  }
+}
+```
+
+## Status values
+
+| Component | `ok` means |
+| --- | --- |
+| `db` | Database is reachable and responsive |
+| `vault` | Vault SQLite is open and writable |
+| `audit_log` | Audit log file is open and the chain verified at boot |
+| `upstream` | Last upstream LLM call (within 60 s) succeeded |
+| `ner_model` | Gemma-4 model loaded and last inference (within 60 s) succeeded |
+
+If any component is degraded, top-level `status` becomes `"degraded"` and HTTP status is `503`. If the server can't respond at all, your load balancer will see a connection error.
+
+## HTTP status
+
+| Status | Meaning |
+| --- | --- |
+| `200` | All components ok |
+| `503` | One or more components degraded |
+| (timeout / connection refused) | Server is fully down |
+
+## Use as a liveness probe
+
+```yaml
+# Kubernetes example
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 3
+```
+
+For a stricter readiness check, you can require all components to be `ok`. The default `/health` does this; there is no separate `/ready` endpoint today.

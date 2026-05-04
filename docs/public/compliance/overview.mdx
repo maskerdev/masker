@@ -1,0 +1,74 @@
+---
+title: "Compliance overview"
+description: "Where Masker is on HIPAA, SOC 2, BAA, and adjacent compliance frameworks"
+---
+
+This page is the honest snapshot of Masker's compliance posture as of May 2026. We update it with every meaningful step — not at marketing's pace.
+
+## Snapshot
+
+| Framework | Status |
+| --- | --- |
+| **HIPAA Safe Harbor** | 9 of 18 categories full coverage, 3 partial, 6 in progress (May 30 production launch target) |
+| **HIPAA BAA** | Available to all production beta customers |
+| **SOC 2 Type 1** | In progress with [Drata](https://drata.com), targeting Q3 2026 |
+| **SOC 2 Type 2** | Q1 2027 |
+| **HITRUST** | Not in current roadmap. Available on request for enterprise pilots. |
+| **GDPR** | Architecture is GDPR-ready (data residency, right-to-erasure via vault drop). EU region (Fly `fra` or AWS `eu-west-1`) on roadmap. |
+| **PCI** | Not applicable — Masker doesn't touch cardholder data. |
+
+## What Masker is
+
+Masker is a **privacy layer** that sits between your voice agent and the LLM. It is not, on its own, a HIPAA-compliant service. Compliance is a property of your overall system. Masker exists to make that system substantially easier to certify.
+
+## What Masker does for compliance
+
+### Reduces what crosses a trust boundary
+
+By the time a payload leaves your VPC and hits OpenAI (or any other model), every detected identifier has been replaced with a token. This shrinks the set of services in your HIPAA boundary — OpenAI no longer processes PHI on your behalf, because they don't see PHI.
+
+### Produces auditable evidence
+
+Every redaction event is logged to an HMAC-chained, append-only audit log. Reports can be generated on demand (per session, per agent, per account). Auditors get the same artifact your security team gets.
+
+### Stays inside your VPC (when you choose)
+
+Masker can run as a Docker container in your AWS / GCP / Azure account. PHI never leaves your network on the way to the model — it leaves as tokens. This is the deployment we recommend for any production healthcare workload.
+
+### Doesn't store PHI by default
+
+The default configuration:
+
+- Does **not** log raw payloads
+- Does **not** persist transcripts
+- Does **not** retain audio
+- Stores only tokens, events, and metadata
+
+You can opt **in** to encrypted payload retention per agent, with a configurable window. Default is off.
+
+## What Masker doesn't do
+
+Equally important to be clear about:
+
+- **Masker is not a substitute for a security program.** You still need access control, vendor management, breach response, training, and the rest of HIPAA's administrative safeguards.
+- **Masker doesn't sign your BAA with OpenAI / Anthropic / etc.** You should not need one in most architectures (because they don't see PHI), but you decide that with your counsel.
+- **Masker is not certified.** SOC 2 is in flight. HITRUST is not. If a customer requires either before a pilot, we can't yet meet that bar — the answer is to wait for SOC 2 Type 1.
+
+## How we got here
+
+A few choices that shape the compliance posture:
+
+- **Rust + minimal dependencies.** Smaller supply chain, fewer CVEs, easier to audit.
+- **No telemetry.** The container does not phone home. There is no analytics call you'd need to disclose.
+- **No SaaS-only mode.** Customer VPC has been a first-class deployment target since v0. We didn't bolt it on later.
+- **Open source.** The detection, tokenization, and audit code is in the public repo. Auditors don't have to take our word for any of it.
+
+## Where to next
+
+- [HIPAA Safe Harbor](/compliance/hipaa-safe-harbor) — the 18 categories, our current coverage, and what's pending
+- [Audit reports](/compliance/audit-reports) — what's in a Masker compliance report
+- [Data residency](/compliance/data-residency) — regions, data flows, and what crosses what boundary
+
+## Questions for an audit?
+
+We've answered a lot of them already. The full security review packet (architecture, data flow diagrams, threat model, key management) is available under NDA — email [hello@masker.dev](mailto:hello@masker.dev).

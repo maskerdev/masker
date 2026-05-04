@@ -1,0 +1,88 @@
+---
+title: "Authentication"
+description: "GitHub OAuth, session cookies, and webhook signature verification"
+---
+
+Masker uses **GitHub OAuth** for portal and API authentication. There is no password login and no API key issuance today (long-lived scoped tokens are on the May 30 production roadmap).
+
+## Cookie session
+
+After completing the GitHub OAuth flow, Masker sets a cookie:
+
+```
+Set-Cookie: masker_session=<opaque>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=2592000
+```
+
+| Property | Value |
+| --- | --- |
+| **Name** | `masker_session` |
+| **HttpOnly** | yes — JS can't read it |
+| **Secure** | yes — TLS only |
+| **SameSite** | `Lax` |
+| **Lifetime** | 30 days, sliding (renewed on every authenticated request) |
+| **Domain** | bound to the API host |
+
+The cookie value is an opaque token. Server-side it maps to a session row that holds your user ID, GitHub login, and last-seen timestamp.
+
+## Authenticating API calls
+
+For programmatic API calls, send the cookie like a browser would:
+
+```bash
+curl -H "Cookie: masker_session=ey..." \
+  https://masker-voice.fly.dev/api/v1/agents
+```
+
+You can grab the cookie value from your browser's devtools after signing in to the portal. It's not pretty, and it's not the long-term answer — but it works for scripts, CI checks, and one-off automation today.
+
+## Logging in via the API
+
+The OAuth handshake is browser-driven. The flow:
+
+1. `GET /api/v1/auth/github` — redirects to GitHub
+2. User approves
+3. GitHub redirects to `GET /api/v1/auth/github/callback?code=...`
+4. Masker exchanges the code, creates a session, sets the cookie, redirects to `/portal`
+
+You cannot complete this flow from a headless script unless you script a real browser. For automation, scope a session cookie from a logged-in browser and use it.
+
+See [Start GitHub OAuth](/api-reference/auth/start-github-oauth) and [OAuth callback](/api-reference/auth/oauth-callback) for the endpoint specs.
+
+## Logging out
+
+```bash
+curl -X POST -H "Cookie: masker_session=ey..." \
+  https://masker-voice.fly.dev/api/v1/auth/logout
+```
+
+Returns `204 No Content` and clears the cookie. The server-side session row is deleted; the cookie value is permanently invalid afterward.
+
+## Identifying the current user
+
+```bash
+curl -H "Cookie: masker_session=ey..." \
+  https://masker-voice.fly.dev/api/v1/me
+```
+
+Returns the user record. See [Current user](/api-reference/auth/current-user).
+
+## Webhook signatures
+
+Two endpoints are unauthenticated by session cookie because they're called by external systems:
+
+- `POST /proxy/{agent_id}/v1/chat/completions`
+- `POST /vapi/webhook/{agent_id}`
+
+These rely on **HMAC signature verification** instead. The voice platform signs each request with a shared secret you've configured (`MASKER_VAPI_WEBHOOK_SECRET` for Vapi). Masker validates the `X-Vapi-Signature` (or platform equivalent) header before processing.
+
+Configure the signing secret in:
+- Your Vapi assistant's **Server URL Secret** field
+- Masker's `MASKER_VAPI_WEBHOOK_SECRET` env var
+
+Both must match. Mismatches return `401`.
+
+## Coming soon
+
+- **Long-lived scoped tokens** — for CI, scripts, and machine-to-machine. Issuable from the portal with explicit scopes (`agents:read`, `sessions:read`, `reports:read`). Targeting May 30.
+- **OIDC** — for enterprise SSO. Roadmap-dependent on first paid customer requiring it.
+- **mTLS** — for self-hosted, locked-down deployments. On request.

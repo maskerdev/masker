@@ -1,0 +1,109 @@
+---
+title: "Data residency"
+description: "Where data lives, what crosses regions, and how to keep PHI in-region"
+---
+
+Data residency is one of the first questions a HIPAA security review asks. This page is the canonical answer.
+
+## Hosted (Masker-managed) deploy
+
+Today, the Masker-hosted service runs in **Fly.io US-West**:
+
+- Primary region: `sea` (Seattle)
+- Failover: `sjc` (San Jose)
+
+Data at rest:
+
+- **Database** (`masker.db`) — Fly volume, AES-256 at rest
+- **Vault** (`vault.db`) — Fly volume, AES-256 at rest
+- **Audit log** — Fly volume, AES-256 at rest, HMAC-chained
+- **Encrypted payloads** (when opted in) — same volumes, encrypted application-side with `kid` keys
+
+Data in transit:
+
+- Inbound: TLS 1.3 from your voice platform to Masker
+- Outbound to OpenAI: TLS 1.3, but **only tokens** flow — PHI is masked before this hop
+- Inter-AZ: Fly internal network, encrypted
+
+What this means for HIPAA:
+
+- All data Masker stores is at rest in US-West.
+- The only data that ever leaves Masker's infrastructure is the masked payload going to your upstream LLM provider, and only over TLS.
+- We sign a BAA with production beta customers covering this deployment.
+
+## Customer VPC deploy
+
+When you run Masker in your own VPC, data residency is **whatever your VPC's residency is**. Masker does not phone home; it does not write data to any path you don't configure; it does not include analytics or telemetry.
+
+For US-only PHI, run in any US AWS / GCP / Azure region.
+For EU residency, run in `eu-*` regions of those providers.
+For sovereign clouds, Masker has been verified to run on AWS GovCloud and Azure Government — get in touch for the offline activation flow.
+
+## What crosses what boundary
+
+For a typical hosted-Masker + OpenAI deploy:
+
+```
+[Voice platform]  ─TLS─▶  [Masker (Fly US-West)]  ─TLS─▶  [OpenAI (US-East)]
+   PHI (yes)                  PHI (in-memory only)             tokens only
+```
+
+For a typical customer-VPC + OpenAI deploy:
+
+```
+[Voice platform]  ─TLS─▶  [Masker (your VPC)]   ─TLS─▶  [OpenAI (US-East)]
+   PHI (yes)                  PHI (in-memory only)             tokens only
+```
+
+For customer-VPC + self-hosted LLM:
+
+```
+[Voice platform]  ─TLS─▶  [Masker (your VPC)]   ─TLS─▶  [Your LLM (your VPC)]
+   PHI (yes)                  PHI (in-memory only)             tokens only
+```
+
+In every variant, PHI never crosses the trust boundary in plaintext. It's in memory inside Masker for tens of milliseconds during masking, then it's gone.
+
+## In-memory PHI
+
+To be precise about what "in memory" means:
+
+1. Masker receives the request body. PHI is in process memory.
+2. Detection passes run. Spans and entity kinds are computed.
+3. Tokenization runs. Tokens are written to the vault (vault-deterministic only). Original values are passed to the HMAC.
+4. Masked body is constructed. Original PHI is dropped from the working buffer.
+5. Original buffer goes out of scope. Rust drops it. The memory is reused for other work.
+
+There is no path in the code that writes original PHI to disk, to logs, or to the audit chain. The original strings live for milliseconds in process memory and never touch persistent storage.
+
+For the most paranoid setups, Masker supports `MASKER_ZEROIZE_BUFFERS=true`, which actively zeroes the working buffer after masking before letting the allocator reclaim it. This costs ~1 ms per request and is off by default.
+
+## Cross-border concerns
+
+For customers in regulated jurisdictions outside the US:
+
+- **EU/UK customers (GDPR/UK GDPR):** run in your own EU/UK VPC. We have not yet released an EU Masker-hosted region; that's targeted for late 2026.
+- **Canadian customers (PIPEDA, OHIP):** run in `ca-central-1` (AWS) or `northamerica-northeast1` (GCP).
+- **India customers (DPDP Act):** run in `ap-south-1` (AWS Mumbai). We have piloted with Indian customers — happy to share notes.
+- **Australian customers (Privacy Act / My Health Records):** run in `ap-southeast-2` (AWS Sydney).
+
+In all cases, the Masker container itself has no region affinity beyond your deploy choice.
+
+## What Masker does not solve
+
+Two clear limits:
+
+1. **Your voice platform's residency.** If your Vapi / Bolna / Retell tenant is in a region you don't want, that's a conversation with them, not us. Masker can only mask what reaches it.
+2. **Your LLM provider's residency.** OpenAI's data processing happens where their infrastructure says it does. Masker reduces the impact (only tokens cross), but does not move OpenAI to a different region.
+
+If both of those concerns are blockers, the customer-VPC + self-hosted LLM pattern is the cleanest answer. Masker has been deployed exactly this way at our larger pilots.
+
+## Right to erasure
+
+For GDPR Article 17 / equivalent:
+
+- **Drop the vault.** With vault-deterministic tokens, dropping `vault.db` makes every prior token irreversible.
+- **Rotate the `kid`.** With reversible-AEAD tokens, rotating the `kid` key and dropping the old key makes prior tokens unreadable.
+- **Purge the audit log entries** for the subject. Use `masker vault purge --subject <id>` (subject correlation requires you to attach a subject ID at request time).
+
+These give you cryptographic erasure without having to track every place a token might have been written.

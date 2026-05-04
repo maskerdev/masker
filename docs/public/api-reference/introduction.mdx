@@ -1,0 +1,102 @@
+---
+title: "API introduction"
+description: "Base URL, conventions, error format, and rate limits"
+---
+
+The Masker REST API powers the portal and is available for direct use. Anything you can do in the portal, you can do via the API.
+
+## Base URL
+
+```
+https://masker-voice.fly.dev/api/v1
+```
+
+For self-hosted deploys, replace the hostname with your own.
+
+A few endpoints sit outside `/api/v1` because they're called by external systems with their own URL conventions:
+
+- `/proxy/{agent_id}/v1/chat/completions` — OpenAI-compatible chat completions proxy (called by your voice platform)
+- `/vapi/webhook/{agent_id}` — Vapi assistant request webhook
+- `/health` — Health check
+
+## Conventions
+
+- **JSON only.** Request and response bodies are JSON unless noted.
+- **UTF-8.** All strings are UTF-8.
+- **ISO 8601 UTC** for timestamps (`2026-05-03T21:14:32.481Z`).
+- **ULIDs** for resource IDs, prefixed by type (`agt_01HYZ...`, `sess_01HYZ...`).
+- **Snake_case** for request and response field names.
+- **HTTP status codes** are meaningful. 2xx = success, 4xx = your problem, 5xx = our problem.
+
+## Pagination
+
+List endpoints use **cursor pagination**:
+
+```bash
+curl "https://masker-voice.fly.dev/api/v1/sessions?limit=50&cursor=eyJ..."
+```
+
+| Query | Default | Max |
+| --- | --- | --- |
+| `limit` | 25 | 100 |
+| `cursor` | (none) | — |
+
+Responses include `next_cursor` if there are more results:
+
+```json
+{
+  "data": [...],
+  "next_cursor": "eyJ..."
+}
+```
+
+Pass `next_cursor` as `cursor` on the next request. When `next_cursor` is null or missing, you've reached the end.
+
+## Errors
+
+Errors return a standard envelope:
+
+```json
+{
+  "error": {
+    "code": "agent_not_found",
+    "message": "No agent with id agt_01HYZ...",
+    "request_id": "req_01HYZ..."
+  }
+}
+```
+
+Common codes:
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `unauthenticated` | 401 | No valid session cookie |
+| `forbidden` | 403 | Authenticated, but not allowed |
+| `not_found` | 404 | Resource doesn't exist or isn't visible to you |
+| `validation_failed` | 422 | Request body or query failed validation |
+| `rate_limited` | 429 | Too many requests; honor `Retry-After` |
+| `upstream_error` | 502 | Upstream LLM provider returned an error |
+| `internal_error` | 500 | Our problem; include `request_id` when reporting |
+
+Always log `request_id` — it's the fastest path to debugging.
+
+## Rate limits
+
+The hosted service applies these per-account limits:
+
+| Endpoint group | Limit |
+| --- | --- |
+| `/proxy/*` and `/vapi/webhook/*` | 100 requests/sec, burst 200 |
+| All other `/api/v1/*` | 30 requests/sec, burst 60 |
+
+When rate-limited, you get a `429` with a `Retry-After` header (seconds). Self-hosted deploys have no rate limit by default.
+
+## Versioning
+
+The current API version is `v1`. We will not break `v1`. When we ship `v2`, both will run side by side for at least 6 months.
+
+Backwards-compatible additions (new endpoints, new optional fields, new enum values) ship under `v1` without bumping the version.
+
+## Authentication
+
+See [Authentication](/api-reference/authentication). Short version: a `masker_session` HTTP-only cookie set by GitHub OAuth, valid for 30 days.

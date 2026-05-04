@@ -1,0 +1,84 @@
+---
+title: "Get session report"
+api: "GET /api/v1/sessions/{id}/report"
+description: "Generate and download a compliance report for one session"
+---
+
+Generates a per-session compliance report PDF. See [Compliance reports](/portal/compliance-reports) for what's in it.
+
+## Endpoint
+
+```
+GET /api/v1/sessions/{id}/report
+```
+
+## Authentication
+
+Requires `masker_session`.
+
+## Path parameters
+
+| Param | Type | Description |
+| --- | --- | --- |
+| `id` | string | Session ID |
+
+## Query parameters
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| `format` | enum | `pdf` | `pdf` (default) or `json` |
+
+## Request
+
+```bash
+curl -H "Cookie: masker_session=ey..." \
+  https://masker-voice.fly.dev/api/v1/sessions/sess_01HYZ.../report \
+  -o session-report.pdf
+```
+
+## Response
+
+For `format=pdf`:
+
+```
+Content-Type: application/pdf
+Content-Disposition: attachment; filename="masker-session-sess_01HYZ.pdf"
+
+<binary>
+```
+
+For `format=json`:
+
+```json
+{
+  "report": {
+    "id": "rep_01HYZ...",
+    "scope": "session",
+    "session_id": "sess_01HYZ...",
+    "generated_at": "2026-05-03T21:30:11Z",
+    "audit_root_hash": "f3a2...",
+    "redactions_by_kind": {"PHONE": 1, "NAME": 2, "DOB": 1},
+    "policy_snapshot": "name: healthcare-default\n...",
+    "safe_harbor_coverage": {
+      "A_names": "full",
+      "B_geo": "full",
+      "C_dates": "partial",
+      "D_phone": "full",
+      "...": "..."
+    }
+  }
+}
+```
+
+## Errors
+
+| Status | Code | Description |
+| --- | --- | --- |
+| `401` | `unauthenticated` | Missing session |
+| `404` | `session_not_found` | No such session in this account |
+| `500` | `report_generation_failed` | PDF rendering failed; report `request_id` |
+
+## Notes
+
+- Reports are generated on demand and not cached. Each call walks the audit log for the session.
+- Per-agent and account-wide report endpoints (`/api/v1/agents/:id/report`, `/api/v1/reports`) are on the May 30 production roadmap.
