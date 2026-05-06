@@ -1,0 +1,39 @@
+# robots.txt for docs.masker.dev
+# Generated 2026-05-05
+
+User-agent: *
+Allow: /
+
+# Common AI crawlers — explicitly allowed (we want LLMs to cite our docs)
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Anthropic-AI
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+# Sitemaps
+Sitemap: https://docs.masker.dev/sitemap.xml
+
+# Hosts
+Host: docs.masker.dev

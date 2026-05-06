@@ -1,0 +1,102 @@
+---
+title: "18 HIPAA Safe Harbor Identifiers — How Masker Handles Each in Voice"
+sidebarTitle: "Safe Harbor identifiers"
+description: "Deep dive on the 18 HIPAA Safe Harbor identifier categories: how Masker detects, tokenizes, and audits each one in real-time voice transcripts."
+keywords: "HIPAA Safe Harbor, 18 Safe Harbor identifiers, HIPAA de-identification, PHI categories, HIPAA voice"
+"og:type": "article"
+---
+
+**BLUF:** The HIPAA Privacy Rule's Safe Harbor method enumerates [18 identifier categories](https://www.hhs.gov/hipaa/for-professionals/privacy/special-topics/de-identification/index.html) (45 CFR §164.514(b)(2)). To qualify as de‑identified, all 18 must be removed. This guide walks each category, the formats Masker detects in voice transcripts, and what's full / partial / in‑progress today.
+
+For the live coverage matrix that ships with every audit report, see [HIPAA Safe Harbor coverage](/compliance/hipaa-safe-harbor).
+
+## The 18 categories
+
+For each category we document: shapes detected, default action (`tokenize` / `redact` / `passthrough`), and recall on Masker's internal eval set.
+
+### A. Names
+
+- **Detected shapes:** first names, last names, full names, family relationships ("my mom Sarah"), nicknames embedded in conversational context.
+- **Method:** Pass 2 NER (Gemma‑4) — names rarely match clean regex.
+- **Default action:** `tokenize` → `MSKV1.person_name.K_HEALTHCARE.<hash>`.
+- **Notes:** Tokens are deterministic per session so the LLM keeps using "Sarah" consistently across turns.
+
+### B. Geographic subdivisions smaller than a state
+
+- **Detected shapes:** ZIP (5‑digit + ZIP+4), city names, street addresses, neighborhood names.
+- **Method:** Pass 1 regex for ZIPs, Pass 2 NER for cities/streets.
+- **Default action:** `tokenize`.
+
+### C. Dates more granular than year (birth, admission, discharge, death)
+
+- **Detected shapes:** `MM/DD/YYYY`, `MM-DD-YYYY`, spoken ("March 14, 1982"), relative ("two weeks ago"), age over 89 (Safe Harbor‑specific).
+- **Status:** Partial — year‑only on certain phrasings still passes through.
+
+### D–F. Telephone, fax, email
+
+- Phone: E.164, North American (`(415) 555‑1212`), spoken ("four one five").
+- Fax: same regex as phone.
+- Email: RFC 5322 simplified.
+
+### G. Social Security numbers
+
+- Dashed (`123‑45‑6789`), undashed (`123456789`), spoken.
+
+### H. Medical record numbers (MRN)
+
+- Tenant‑configurable patterns. Add custom regex in your [mask policy](/configuration/mask-policy).
+
+### I. Health plan beneficiary numbers
+
+- Common payer formats (Medicare, BCBS) — full. Long‑tail payer formats need policy customization.
+
+### J. Account numbers
+
+- Generic numeric + Luhn‑checked credit card detection.
+
+### K. Certificate / license numbers
+
+- Major US states' driver license formats. DEA and NPI partial.
+
+### L. Vehicle identifiers and serial numbers (incl. license plates)
+
+- ⏳ In progress, targeted for May 30, 2026.
+
+### M. Device identifiers and serial numbers
+
+- ⏳ In progress.
+
+### N. Web URLs
+
+- URLs with PHI in query strings are redacted today. Full‑URL redaction in progress.
+
+### O. IP addresses
+
+- v4 and v6, default action `redact` (not `tokenize`).
+
+### P. Biometric identifiers (fingerprint, voiceprint)
+
+- ⏳ In progress. Voice fingerprinting is not in scope today.
+
+### Q. Full-face photographs
+
+- N/A — Masker doesn't process images.
+
+### R. Any other unique identifying number, characteristic, or code
+
+- Best‑effort via NER. By design Masker can't claim "full" on this category.
+
+## Live coverage matrix
+
+For the canonical, version‑pinned coverage matrix, see [HIPAA Safe Harbor coverage](/compliance/hipaa-safe-harbor). The same matrix ships with every per‑session audit report so auditors can verify what was active at the time of each call.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="HIPAA voice agents guide" icon="shield-halved" href="/guides/hipaa-voice-agents">Pillar reference.</Card>
+  <Card title="Mask policy" icon="sliders" href="/configuration/mask-policy">Tune detectors and per‑category actions.</Card>
+</CardGroup>
+
+---
+
+_Last updated: May 5, 2026. Written by Masker.dev Engineering. Citations: [HHS HIPAA Privacy Rule §164.514](https://www.hhs.gov/hipaa/for-professionals/privacy/special-topics/de-identification/index.html)._

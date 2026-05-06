@@ -1,0 +1,64 @@
+---
+title: "Twilio Voice + Custom LLM: PHI Redaction with Masker"
+sidebarTitle: "Twilio + Custom LLM"
+description: "DIY pattern for Twilio Voice + your own orchestration service: route the LLM call through Masker for HIPAA-grade PHI redaction."
+keywords: "Twilio HIPAA voice, Twilio custom LLM, PHI redaction Twilio, Masker Twilio integration"
+---
+
+**BLUF:** Twilio Voice itself doesn't speak Custom LLM, but if you've built your own orchestration service on top of Twilio (TwiML + ConversationRelay or your own STT/TTS pipeline), you can drop Masker into the LLM hop the same way you'd integrate it with Vapi or Retell — point your service's `OPENAI_BASE_URL` (or equivalent) at the Masker proxy URL.
+
+## The pattern
+
+```
+Caller ↔ Twilio Voice ↔ Your service ──► Masker proxy ──► OpenAI
+                                          │                │
+                                          tokenize         rehydrate
+```
+
+If your service uses the OpenAI Python SDK:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key=OPENAI_API_KEY,
+    base_url="https://masker-voice.fly.dev/proxy/AGENT_ID/v1",
+)
+
+# Use exactly as you would normally
+resp = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": user_utterance}],
+)
+```
+
+If your service uses raw `curl`:
+
+```bash
+curl https://masker-voice.fly.dev/proxy/AGENT_ID/v1/chat/completions \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Hi, my SSN is 123-45-6789"}]
+  }'
+```
+
+The proxy is OpenAI‑compatible — pass the OpenAI key in `Authorization`, and Masker forwards upstream after masking.
+
+## What you still need
+
+- **A Twilio BAA** — covers Twilio's voice and recording.
+- **STT/TTS BAAs** — Deepgram, AssemblyAI, ElevenLabs, etc., depending on your stack.
+- **Per‑session vault scoping** — pass a stable `session_id` (Twilio's `CallSid` is a good fit) so rehydration works across turns. See [Tokenization](/masking/tokenization) for the header.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Tokenization" icon="key" href="/masking/tokenization">Per-session vault scoping with the `Masker-Session-Id` header.</Card>
+  <Card title="Self-hosted deployment" icon="server" href="/guides/self-hosted">Run Masker next to your orchestration service for lowest latency.</Card>
+</CardGroup>
+
+---
+
+_Last updated: May 5, 2026. Written by Masker.dev Engineering._

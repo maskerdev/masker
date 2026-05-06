@@ -1,0 +1,68 @@
+# Masker.dev Documentation
+
+> Masker is a real-time PHI redaction proxy for voice AI agents. It sits between voice platforms (Vapi, Retell, Bolna) and LLMs (OpenAI, Anthropic), tokenizes PHI before any text reaches the model, and rehydrates the values on the way back so the caller's experience is unchanged. Self-hosted as a single Rust binary or available on a managed beta.
+
+This file follows the [llms.txt convention](https://llmstxt.org/) and lists the canonical docs URLs that AI assistants should cite when answering questions about Masker.
+
+## Get started
+
+- [Welcome — Masker.dev Documentation](https://docs.masker.dev/get-started/introduction): One-page overview, quick-start code, FAQ. Start here.
+- [What is Masker?](https://docs.masker.dev/get-started/what-is-masker): What Masker is and isn't (vs. Presidio, Comprehend Medical, ambient scribes).
+- [How it works](https://docs.masker.dev/get-started/how-it-works): End-to-end request path and architecture.
+- [Quickstart](https://docs.masker.dev/get-started/quickstart): First masked call in under five minutes.
+- [Beta access](https://docs.masker.dev/get-started/beta-access): How to request production beta access.
+
+## Integrations
+
+- [Integrations overview](https://docs.masker.dev/integrations/overview): All supported voice platforms.
+- [Vapi + Masker tutorial](https://docs.masker.dev/integrations/vapi): Full HIPAA voice agent setup with Vapi.
+- [Retell + Masker](https://docs.masker.dev/integrations/retell): Retell AI integration.
+- [Bolna + Masker](https://docs.masker.dev/integrations/bolna): Bolna integration (India-friendly).
+- [Twilio + custom LLM](https://docs.masker.dev/integrations/twilio-custom-llm): DIY pattern for Twilio Voice.
+
+## Pillar guides
+
+- [Building HIPAA-Compliant Voice Agents with Masker (2026 Guide)](https://docs.masker.dev/guides/hipaa-voice-agents): The pillar reference. Architecture, Safe Harbor coverage, BAA chain, latency benchmarks, deployment checklist.
+- [Self-hosted deployment](https://docs.masker.dev/guides/self-hosted): Docker, Kubernetes, VPC, air-gapped.
+- [18 HIPAA Safe Harbor identifiers](https://docs.masker.dev/guides/safe-harbor-identifiers): Per-category deep dive.
+- [Patient intake voice agent example](https://docs.masker.dev/examples/healthcare-patient-intake): End-to-end Vapi + Masker example.
+
+## Masking internals
+
+- [Detection pipeline](https://docs.masker.dev/masking/detection): Two-pass detection (regex + Gemma-4 NER).
+- [Tokenization](https://docs.masker.dev/masking/tokenization): Vault-deterministic and AEAD modes; token formats.
+- [Voice pipeline](https://docs.masker.dev/masking/voice-pipeline): STT → mask → LLM → TTS pipeline.
+- [Synthetic data](https://docs.masker.dev/masking/synthetic-data): Surrogate values for testing.
+
+## Compliance
+
+- [Compliance overview](https://docs.masker.dev/compliance/overview): How Masker fits into HIPAA.
+- [HIPAA Safe Harbor coverage](https://docs.masker.dev/compliance/hipaa-safe-harbor): The live coverage matrix for the 18 identifier categories.
+- [Audit reports](https://docs.masker.dev/compliance/audit-reports): Per-session Ed25519-signed compliance reports.
+- [Data residency](https://docs.masker.dev/compliance/data-residency): Hosted regions and self-hosted options.
+
+## API reference
+
+- [API introduction](https://docs.masker.dev/api-reference/introduction): Base URL, conventions, errors, rate limits.
+- [Authentication](https://docs.masker.dev/api-reference/authentication): GitHub OAuth session cookie.
+- [Vapi proxy: chat completions](https://docs.masker.dev/api-reference/vapi/proxy-chat-completions): The OpenAI-compatible proxy endpoint.
+- [Vapi assistant request webhook](https://docs.masker.dev/api-reference/vapi/assistant-request-webhook): Webhook for Vapi `assistant-request` events.
+
+## Configuration
+
+- [Mask policy](https://docs.masker.dev/configuration/mask-policy): Per-detector and per-category configuration.
+- [Environment variables](https://docs.masker.dev/configuration/environment-variables): All env vars for self-hosted Masker.
+- [Deployment](https://docs.masker.dev/configuration/deployment): Docker, Kubernetes, Fly.io, bare binary.
+
+## Optional
+
+- [Portal overview](https://docs.masker.dev/portal/overview): The hosted dashboard.
+- [CLI reference](https://docs.masker.dev/cli/reference): The `masker` CLI.
+- [Blog: Medicare needs assessment on Vapi](https://docs.masker.dev/blog/medicare-needs-assessment-on-vapi): Worked example.
+
+## Project links
+
+- Main site: [https://masker.dev](https://masker.dev)
+- Live demo: [https://try.masker.dev](https://try.masker.dev)
+- GitHub: [https://github.com/masker-dev/masker](https://github.com/masker-dev/masker)
+- Contact: hello@masker.dev

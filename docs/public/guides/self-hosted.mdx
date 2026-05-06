@@ -1,0 +1,64 @@
+---
+title: "Self-Hosted Masker Deployment: Docker, Kubernetes, VPC, Air-Gapped"
+sidebarTitle: "Self-hosted"
+description: "Deploy Masker as a Rust binary or Docker image inside your AWS, GCP, on-prem, or air-gapped environment. Configuration, networking, and ops checklist."
+keywords: "PHI masking self-hosted, Masker self-hosted, Masker Docker, Masker Kubernetes, HIPAA voice agent VPC, Rust HIPAA proxy"
+"og:title": "Self-Hosted Masker Deployment Guide"
+"og:type": "article"
+---
+
+**BLUF:** Masker ships as a single Rust binary and a small Docker image. Run it next to your voice platform's egress (or alongside your LLM provider's region) and the integration step on Vapi/Retell/Bolna is identical to the hosted product — just point the Custom LLM URL at your hostname instead of `masker-voice.fly.dev`.
+
+## Why self-host
+
+- **Data residency** — keep PHI inside your VPC; the LLM hop is the only egress.
+- **Latency** — co‑locating with your LLM provider's region cuts 15–30 ms off network hops.
+- **Air‑gapped or on‑prem** — required by some hospital systems and government contracts.
+- **Custom mask policies** — version your `configs/mask_policy.yaml` alongside your application code.
+
+## Deployment options
+
+| Option | When to use |
+| --- | --- |
+| Docker on a VM | Smallest blast radius for pilots and proofs of concept |
+| Docker Compose | Single‑node staging |
+| Kubernetes (Helm chart on request) | Production at scale; horizontal scaling |
+| Bare Rust binary | Air‑gapped or unusual environments |
+| Fly.io | Same as the hosted product; useful for a private replica |
+
+For configuration details, environment variables, and a Docker Compose example, see [Deployment](/configuration/deployment) and [Environment variables](/configuration/environment-variables).
+
+## Quick start (Docker)
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e MASKER_DB_URL=sqlite:///data/masker.sqlite \
+  -e MASKER_OPENAI_API_KEY=$OPENAI_API_KEY \
+  -e MASKER_VAULT_KEY_FILE=/secrets/vault.key \
+  -v $(pwd)/data:/data \
+  -v $(pwd)/secrets:/secrets:ro \
+  ghcr.io/masker-dev/masker:latest
+```
+
+Then point Vapi/Retell at `http://YOUR_HOST:8080/proxy/{agent_id}/v1/chat/completions`.
+
+## Production checklist
+
+- [ ] Persistent volume for SQLite (or migrate to Postgres — roadmap)
+- [ ] TLS termination in front (ALB, Caddy, etc.)
+- [ ] `MASKER_VAULT_KEY_FILE` mounted from a secrets manager
+- [ ] Liveness/readiness probes on `/health`
+- [ ] Log shipping to your HIPAA‑safe observability stack
+- [ ] Audit reports archived to S3 with object lock
+- [ ] Backups of the agent + session DB
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Deployment configuration" icon="screwdriver-wrench" href="/configuration/deployment">Full env var reference and topology recipes.</Card>
+  <Card title="HIPAA voice agents guide" icon="shield-halved" href="/guides/hipaa-voice-agents">Pillar reference.</Card>
+</CardGroup>
+
+---
+
+_Last updated: May 5, 2026. Written by Masker.dev Engineering._

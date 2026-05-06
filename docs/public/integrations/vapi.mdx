@@ -1,0 +1,356 @@
+---
+title: "Vapi + Masker: Build HIPAA Voice Agents in Under 5 Minutes"
+sidebarTitle: "Vapi"
+description: "Step-by-step Masker Vapi integration tutorial: real-time PHI redaction for HIPAA-compliant Vapi voice agents using a Custom LLM URL. Code, screenshots, troubleshooting."
+keywords: "Masker Vapi integration, Vapi HIPAA, Vapi PHI redaction, Vapi custom LLM, HIPAA voice agent Vapi, Vapi Masker tutorial, real-time PHI redaction Vapi"
+"og:title": "Vapi + Masker: HIPAA Voice Agents in <5 Minutes"
+"og:description": "One URL change. Real-time PHI redaction for Vapi assistants. Step-by-step tutorial with code."
+"og:type": "article"
+"twitter:card": "summary_large_image"
+---
+
+**Bottom line up front:** To make a Vapi voice agent HIPAA‑safer with Masker, change one field on your Vapi assistant — set **Custom LLM URL** to a per‑agent Masker proxy URL. Every chat completion is routed through Masker, which detects and tokenizes PHI (names, DOBs, SSNs, MRNs, account numbers) before it reaches OpenAI, then rehydrates the values in the response. No SDK install, no app code change, ~45–95 ms added latency. This guide walks the full integration end‑to‑end with code, troubleshooting, and a verification step against OpenAI's own logs.
+
+<Note>
+**You'll need:** a [Vapi account](https://dashboard.vapi.ai), an OpenAI API key, and a GitHub account (for Masker portal sign‑in). About 5 minutes.
+</Note>
+
+## Why Vapi needs PHI redaction
+
+Vapi handles the phone connection, STT, and TTS, but the LLM call goes wherever you point the **Custom LLM URL** field. By default, that's OpenAI — and OpenAI retains chat completion logs for 30 days even on enterprise accounts. For a HIPAA workload, raw PHI in those logs is a problem you want to avoid, not a problem you want to argue about with auditors.
+
+Masker solves this by sitting in the LLM call path. Vapi's STT output is sent to Masker first; Masker tokenizes any detected PHI and forwards a sanitized payload upstream. The LLM provider's logs only ever see opaque tokens like `MSKV1.person_name.K_HEALTHCARE.a3f9...`. The original values stay in Masker's per‑session vault and are rehydrated in the response so the caller hears a normal answer.
+
+## Architecture: the request path
+
+```
+Caller ↔ Vapi ──► Masker proxy ──► OpenAI ──► Masker ──► Vapi ↔ Caller
+                  │                            │
+                  detect + tokenize             rehydrate tokens
+                  (regex + Gemma-4 NER)         from per-session vault
+```
+
+The per‑agent proxy URL has the shape:
+
+```
+https://masker-voice.fly.dev/proxy/{agent_id}/v1/chat/completions
+```
+
+It is OpenAI‑compatible, so Vapi's Custom LLM client doesn't know it's talking to Masker. For self‑hosted deployments, replace the hostname with your own. See [Self‑hosted deployment](/guides/self-hosted).
+
+## Step 1 — Sign in to the Masker portal
+
+Open [masker-voice.fly.dev/portal/login](https://masker-voice.fly.dev/portal/login) and click **Sign in with GitHub**. The OAuth flow asks for your email only.
+
+## Step 2 — Connect a Vapi agent
+
+<Steps>
+  <Step title="Click 'New Agent'">
+    On the dashboard, click **New Agent**. The 3‑step wizard opens.
+  </Step>
+  <Step title="Name the agent">
+    Use something descriptive — the name shows up in your session list. Examples: `Patient intake (test)`, `Prior auth — primary care`.
+  </Step>
+  <Step title="Paste your Vapi API key">
+    From the [Vapi dashboard](https://dashboard.vapi.ai/account), copy your API key. Masker uses it once to create the assistant on Vapi's side, then stores it encrypted (AES‑256‑GCM‑SIV).
+
+    <Warning>
+    Don't paste a customer's Vapi key. Use your own dev account for testing — the key has full permissions on your Vapi org.
+    </Warning>
+  </Step>
+  <Step title="Copy the proxy URL">
+    The wizard shows two URLs:
+    - **Proxy URL** — `https://masker-voice.fly.dev/proxy/{agent_id}/v1/chat/completions` — the OpenAI‑compatible Vapi LLM endpoint.
+    - **Webhook URL** — `https://masker-voice.fly.dev/vapi/webhook/{agent_id}` — handles Vapi's `assistant-request` events.
+
+    Both are wired into Vapi automatically by Masker, but they're shown for reference and for non‑Vapi platforms.
+  </Step>
+</Steps>
+
+## Step 3 — Verify the assistant on Vapi
+
+Open the [Vapi dashboard](https://dashboard.vapi.ai) → **Assistants** → find the assistant Masker just created. Confirm:
+
+| Field | Value |
+| --- | --- |
+| Model provider | **Custom LLM** |
+| Custom LLM URL | `https://masker-voice.fly.dev/proxy/{agent_id}/v1/chat/completions` |
+| Model | `gpt-4o-mini` (default — change in Vapi if you want a different upstream) |
+
+To use Masker with an **existing** Vapi assistant instead of letting Masker create a new one: open that assistant's settings, switch the Model provider to **Custom LLM**, and paste the proxy URL.
+
+## Step 4 — Place a test call
+
+Use Vapi's **Talk to Assistant** button or call the phone number on the assistant. Try saying:
+
+> "Hi, my name is Sarah Johnson. My date of birth is March 14, 1982, and my member ID is BCBS-447299."
+
+Behind the scenes, here's the before/after that the LLM provider sees:
+
+**Before Masker** (raw payload to OpenAI):
+
+```json
+{
+  "model": "gpt-4o-mini",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hi, my name is Sarah Johnson. My date of birth is March 14, 1982, and my member ID is BCBS-447299."
+    }
+  ]
+}
+```
+
+**After Masker** (sanitized payload OpenAI actually receives):
+
+```json
+{
+  "model": "gpt-4o-mini",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hi, my name is MSKV1.person_name.K_HEALTHCARE.a3f9... My date of birth is MSKV1.dob.K_HEALTHCARE.b7c2..., and my member ID is MSKV1.account_number.K_HEALTHCARE.c1d8..."
+    }
+  ]
+}
+```
+
+The caller still hears `"Got it, Sarah"` because Masker rehydrates the token in the response on the way back to Vapi.
+
+## Step 5 — Verify in OpenAI's logs
+
+Open [platform.openai.com/logs](https://platform.openai.com/logs) and find the chat completion that just ran. The **Input** section should look like:
+
+```
+User: Hi, my name is MSKV1.person_name.K_HEALTHCARE.a3f9...
+      My date of birth is MSKV1.dob.K_HEALTHCARE.b7c2...
+      and my member ID is MSKV1.account_number.K_HEALTHCARE.c1d8...
+```
+
+No raw name. No DOB. No member ID. **This is the proof.** Your LLM provider's logs (which OpenAI retains for 30 days by default, even on enterprise) only ever saw tokens.
+
+## Step 6 — Download the signed audit report
+
+Back in the Masker portal:
+
+1. Open **Sessions** → click the session that just completed.
+2. Toggle between **Raw** and **Masked** views.
+3. Click **Download report** to get the [Ed25519‑signed JSON compliance report](/compliance/audit-reports).
+
+The report includes the BAA chain (Vapi → OpenAI → Deepgram → ElevenLabs), the HIPAA Safe Harbor coverage breakdown for that session, and the count of each PHI category detected.
+
+## Latency: what to expect
+
+A typical masked turn adds **45–95 ms** vs. calling OpenAI directly. This is well inside Vapi's first‑token‑latency budget (< 1500 ms typical).
+
+| Stage | Typical |
+| --- | --- |
+| Pass 1 regex detection | < 1 ms |
+| Pass 2 Gemma‑4 NER | 20–50 ms |
+| Tokenization + vault write | 2–5 ms |
+| Rehydration on response | < 5 ms |
+| Network hop overhead | 15–30 ms |
+| **Total added latency** | **45–95 ms** |
+
+If you measure higher overhead in your environment, that's a bug — file it at [hello@masker.dev](mailto:hello@masker.dev).
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Vapi shows 'Custom LLM error: 502 upstream_error'">
+    Masker received the request but the upstream LLM call failed. Check:
+    1. Your OpenAI key is valid and not rate‑limited (Masker uses the key configured on the agent).
+    2. The model name is supported (`gpt-4o-mini`, `gpt-4o`, `gpt-4-turbo`).
+    3. Masker's `/health` endpoint at [masker-voice.fly.dev/health](https://masker-voice.fly.dev/health) returns `{"status":"ok"}`.
+
+    Always include the `request_id` from the error envelope when filing.
+  </Accordion>
+  <Accordion title="Tokens are leaking through to OpenAI logs">
+    If you see raw PHI in OpenAI's logs, three things to check:
+    1. Confirm Vapi's Custom LLM URL is the Masker proxy URL — easy to leave the OpenAI endpoint by mistake.
+    2. Check the [HIPAA Safe Harbor coverage matrix](/compliance/hipaa-safe-harbor) for the category in question. Some categories are still partial.
+    3. Tune the [mask policy](/configuration/mask-policy) — e.g., add a custom regex for your tenant's MRN format.
+  </Accordion>
+  <Accordion title="Caller hears tokens like 'MSKV1...' instead of names">
+    Rehydration failed. Most common causes: (1) the response went to a different agent's proxy URL than the one that masked it (vault is per‑agent), or (2) the LLM truncated or modified the token. Open the session in the portal and check the **Detection details** panel — every token has a `rehydrated: true|false` flag.
+  </Accordion>
+  <Accordion title="Webhook is not firing">
+    Vapi's `assistant-request` webhook hits `https://masker-voice.fly.dev/vapi/webhook/{agent_id}`. Confirm:
+    1. The webhook URL is set on the assistant (Masker sets it automatically; check it didn't get overridden).
+    2. The `X-Vapi-Signature` header is being validated (Masker rejects unsigned requests by default).
+  </Accordion>
+  <Accordion title="Latency is higher than 95 ms">
+    The most common cause is a cold start on the NER model (Pass 2 Gemma‑4). The first request after a deploy or scale‑to‑zero takes ~600 ms; subsequent requests should be in the 45–95 ms range. If steady‑state latency is high, check the [voice pipeline](/masking/voice-pipeline) docs and the `stage_durations_ms` field on the session record.
+  </Accordion>
+</AccordionGroup>
+
+## Frequently asked questions
+
+<AccordionGroup>
+  <Accordion title="How do I make my Vapi agent HIPAA compliant?">
+    Sign in to the Masker portal, create an agent, copy the proxy URL, and set it as Vapi's Custom LLM URL. Masker tokenizes PHI before it reaches OpenAI and produces a per‑session signed audit report. Masker is one node in the HIPAA chain — you still need BAAs with Vapi, your STT/TTS providers, and the LLM provider.
+  </Accordion>
+  <Accordion title="Can I use Masker with an existing Vapi assistant?">
+    Yes. Open the assistant's settings, switch Model provider to **Custom LLM**, and paste the Masker proxy URL. No need to recreate the assistant.
+  </Accordion>
+  <Accordion title="Does Masker work with Vapi's tool calls and function calling?">
+    Yes. Masker tokenizes PHI in tool call arguments before they're forwarded upstream and rehydrates them in tool call results. See [Tokenization](/masking/tokenization).
+  </Accordion>
+  <Accordion title="What about Vapi's transcript storage?">
+    Vapi stores its own transcripts. Masker's per‑agent proxy controls the LLM hop only — for full coverage, configure Vapi to disable transcript retention or rotate transcripts into a HIPAA‑safe store. We're working on a Vapi webhook that streams masked transcripts directly into your portal session.
+  </Accordion>
+  <Accordion title="What's the latency overhead vs. calling OpenAI directly?">
+    45–95 ms in steady state. Cold starts can hit ~600 ms on the first request after deploy.
+  </Accordion>
+  <Accordion title="Can I run Masker in my own VPC instead of using the hosted endpoint?">
+    Yes. Masker ships as a Rust binary and Docker image. See [Self‑hosted deployment](/guides/self-hosted). The integration step is identical except the proxy URL hostname is yours.
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Retell + Masker" icon="phone-volume" href="/integrations/retell">
+    Same integration pattern for Retell AI agents.
+  </Card>
+  <Card title="HIPAA voice agents pillar guide" icon="shield-halved" href="/guides/hipaa-voice-agents">
+    Architecture, compliance checklist, benchmarks.
+  </Card>
+  <Card title="Configure the mask policy" icon="sliders" href="/configuration/mask-policy">
+    Tune which detectors run and how aggressively they tokenize.
+  </Card>
+  <Card title="Audit reports" icon="file-shield" href="/compliance/audit-reports">
+    What's in the report, how to verify the Ed25519 signature offline.
+  </Card>
+  <Card title="Patient intake example" icon="hospital-user" href="/examples/healthcare-patient-intake">
+    End‑to‑end Vapi agent with Masker, with code repo links.
+  </Card>
+  <Card title="See more on masker.dev" icon="arrow-up-right-from-square" href="https://masker.dev/integrations">
+    Integration overview and pricing on the main site.
+  </Card>
+</CardGroup>
+
+---
+
+_Last updated: May 5, 2026. Written by Masker.dev Engineering. Citations: [HHS HIPAA Privacy Rule §164.514](https://www.hhs.gov/hipaa/for-professionals/privacy/special-topics/de-identification/index.html), [Vapi Custom LLM docs](https://docs.vapi.ai/customization/custom-llm)._
+
+export const HowToSchema = () => (
+  <script
+    type="application/ld+json"
+    dangerouslySetInnerHTML={{
+      __html: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "HowTo",
+        "name": "Build a HIPAA-Compliant Vapi Voice Agent with Masker",
+        "description": "Wire a Vapi assistant through Masker for real-time PHI redaction by changing one Custom LLM URL.",
+        "image": "https://masker.dev/og/vapi-integration.png",
+        "totalTime": "PT5M",
+        "estimatedCost": { "@type": "MonetaryAmount", "currency": "USD", "value": "0" },
+        "supply": [
+          { "@type": "HowToSupply", "name": "Vapi account" },
+          { "@type": "HowToSupply", "name": "OpenAI API key" },
+          { "@type": "HowToSupply", "name": "GitHub account (for Masker portal)" }
+        ],
+        "tool": [
+          { "@type": "HowToTool", "name": "Masker portal at masker-voice.fly.dev" },
+          { "@type": "HowToTool", "name": "Vapi dashboard" }
+        ],
+        "step": [
+          {
+            "@type": "HowToStep",
+            "name": "Sign in to the Masker portal",
+            "text": "Open masker-voice.fly.dev/portal/login and sign in with GitHub.",
+            "url": "https://docs.masker.dev/integrations/vapi#step-1--sign-in-to-the-masker-portal"
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Connect a Vapi agent",
+            "text": "Click 'New Agent', name it, paste your Vapi API key, and copy the proxy URL.",
+            "url": "https://docs.masker.dev/integrations/vapi#step-2--connect-a-vapi-agent"
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Verify the assistant on Vapi",
+            "text": "Confirm Vapi assistant uses Custom LLM provider with the Masker proxy URL.",
+            "url": "https://docs.masker.dev/integrations/vapi#step-3--verify-the-assistant-on-vapi"
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Place a test call",
+            "text": "Use Vapi's Talk to Assistant button or call the assistant's phone number to verify masking.",
+            "url": "https://docs.masker.dev/integrations/vapi#step-4--place-a-test-call"
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Verify in OpenAI's logs",
+            "text": "Open platform.openai.com/logs and confirm only Masker tokens appear in the chat completion input.",
+            "url": "https://docs.masker.dev/integrations/vapi#step-5--verify-in-openais-logs"
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Download the signed audit report",
+            "text": "In the Masker portal, open the session and download the Ed25519-signed compliance report.",
+            "url": "https://docs.masker.dev/integrations/vapi#step-6--download-the-signed-audit-report"
+          }
+        ]
+      })
+    }}
+  />
+);
+
+export const FAQSchema = () => (
+  <script
+    type="application/ld+json"
+    dangerouslySetInnerHTML={{
+      __html: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "How do I make my Vapi agent HIPAA compliant?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Sign in to the Masker portal, create an agent, copy the proxy URL, and set it as Vapi's Custom LLM URL. Masker tokenizes PHI before it reaches OpenAI and produces a per-session signed audit report."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I use Masker with an existing Vapi assistant?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Switch the assistant's Model provider to Custom LLM and paste the Masker proxy URL."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does Masker work with Vapi tool calls and function calling?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Masker tokenizes PHI in tool call arguments and rehydrates them in tool call results."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What is the latency overhead vs. calling OpenAI directly?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "45 to 95 milliseconds in steady state. Cold starts can hit roughly 600 ms on the first request after deploy."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I run Masker in my own VPC?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Masker ships as a Rust binary and Docker image. The integration step is identical except the proxy URL hostname is yours."
+            }
+          }
+        ]
+      })
+    }}
+  />
+);
+
+<HowToSchema />
+<FAQSchema />

@@ -1,0 +1,235 @@
+---
+title: "Retell AI + Masker: HIPAA-Compliant Voice Agents with PHI Redaction"
+sidebarTitle: "Retell"
+description: "Wire Retell AI agents through Masker for real-time PHI redaction. Step-by-step tutorial with Custom LLM URL, code examples, and HIPAA verification."
+keywords: "Masker Retell HIPAA, Retell AI HIPAA, Retell PHI redaction, Retell custom LLM, HIPAA voice agent Retell, Retell Masker tutorial"
+"og:title": "Retell AI + Masker: HIPAA Voice Agents"
+"og:description": "Real-time PHI redaction for Retell AI voice agents. Custom LLM URL change, BAA chain, signed audit reports."
+"og:type": "article"
+"twitter:card": "summary_large_image"
+---
+
+**Bottom line up front:** Retell AI supports custom LLM endpoints. Point your Retell agent's LLM URL at a Masker proxy URL and every chat completion is routed through Masker, which tokenizes PHI before forwarding upstream and rehydrates the original values in the response. The integration pattern is identical to [Vapi](/integrations/vapi) — the only difference is where you paste the URL inside Retell's dashboard.
+
+<Note>
+**Status:** Retell platform integration is in beta as of May 2026. The portal supports Retell agents under the same OAuth flow as Vapi. To request beta access, see [Beta access](/get-started/beta-access).
+</Note>
+
+## Why route Retell through Masker
+
+Retell handles the phone connection, low‑latency STT, and TTS, and lets you bring your own LLM via a custom endpoint. That custom endpoint is the perfect place to insert HIPAA controls: by replacing the LLM URL with a Masker proxy URL, you get tokenization, vault, rehydration, and audit logging without changing your agent's behavior or your prompt.
+
+## Architecture
+
+```
+Caller ↔ Retell ──► Masker proxy ──► OpenAI ──► Masker ──► Retell ↔ Caller
+                    │                            │
+                    detect + tokenize             rehydrate
+```
+
+Per‑agent proxy URL shape:
+
+```
+https://masker-voice.fly.dev/proxy/{agent_id}/v1/chat/completions
+```
+
+## Step 1 — Create a Retell agent in the Masker portal
+
+<Steps>
+  <Step title="Sign in">
+    Open [masker-voice.fly.dev/portal/login](https://masker-voice.fly.dev/portal/login) and click **Sign in with GitHub**.
+  </Step>
+  <Step title="Click 'New Agent' → choose 'Retell'">
+    The wizard creates an agent record and provisions a per‑agent proxy URL. (Today this URL is identical in shape to the Vapi one — the wizard just records that the agent is wired to Retell so the audit reports show the right BAA chain.)
+  </Step>
+  <Step title="Copy the proxy URL">
+    `https://masker-voice.fly.dev/proxy/{agent_id}/v1/chat/completions`
+  </Step>
+</Steps>
+
+## Step 2 — Configure Retell to use Masker
+
+In the [Retell dashboard](https://app.retellai.com):
+
+1. Open the agent you want to make HIPAA‑safer.
+2. In **LLM settings**, switch the LLM type to **Custom LLM**.
+3. Paste the Masker proxy URL into **Custom LLM URL**.
+4. Set **Model** to `gpt-4o-mini` (or any OpenAI model your account has access to — Masker forwards the model field through).
+5. Save.
+
+```yaml
+# Retell agent config (example)
+llm_type: custom
+custom_llm_url: https://masker-voice.fly.dev/proxy/agt_01HYZ.../v1/chat/completions
+model: gpt-4o-mini
+temperature: 0.4
+```
+
+## Step 3 — Place a test call
+
+Use Retell's **Test agent** widget. Try:
+
+> "My name is Marcus Lee, my insurance ID is AET-882144, and I'm calling about my prescription refill."
+
+Open the **Sessions** tab in the Masker portal. The session record shows the raw transcript on one side and the masked transcript on the other:
+
+```
+Raw:    "My name is Marcus Lee, my insurance ID is AET-882144..."
+Masked: "My name is MSKV1.person_name.K_HEALTHCARE.d4e1...,
+         my insurance ID is MSKV1.account_number.K_HEALTHCARE.f2a7..."
+```
+
+## Step 4 — Verify in your LLM provider's logs
+
+Same verification step as Vapi — open [platform.openai.com/logs](https://platform.openai.com/logs) and confirm only Masker tokens appear in the chat completion input.
+
+## What's the same as Vapi, what's different
+
+| | Vapi | Retell |
+| --- | --- | --- |
+| Integration mechanism | Custom LLM URL | Custom LLM URL |
+| Per‑agent proxy URL | ✅ same shape | ✅ same shape |
+| Webhook for assistant‑request events | ✅ supported | ⏳ Retell uses inline config, no webhook needed |
+| Tool calls forwarded with masking | ✅ | ✅ |
+| BAA chain in audit report | Vapi → OpenAI → Deepgram → ElevenLabs | Retell → OpenAI → (Retell's STT/TTS chain) |
+| Latency overhead | 45–95 ms | 45–95 ms |
+| Production readiness | ✅ live | 🚧 beta |
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Retell shows 'LLM call failed: 502'">
+    Same as the Vapi case — Masker received the request but the upstream LLM call failed. Check OpenAI key validity, model availability, and Masker `/health`. Always include the `request_id` from the error envelope when filing.
+  </Accordion>
+  <Accordion title="Caller hears tokens like 'MSKV1...'">
+    Rehydration failed. Open the session in the Masker portal and check **Detection details** for `rehydrated: false` flags. The most common cause is the LLM truncating a token mid‑string.
+  </Accordion>
+  <Accordion title="Retell tool calls are leaking PHI">
+    Confirm the tool call is going through the Masker proxy (not directly to OpenAI). Some teams accidentally configure tools to bypass the LLM URL. See [Tokenization](/masking/tokenization) for tool‑call masking details.
+  </Accordion>
+</AccordionGroup>
+
+## Frequently asked questions
+
+<AccordionGroup>
+  <Accordion title="Does Retell AI support HIPAA?">
+    Retell offers a BAA on its enterprise tier. Masker is one node in the HIPAA chain — adding Masker reduces the surface area where PHI lives in the LLM hop, but you still need BAAs with Retell, your STT/TTS providers, and the LLM provider.
+  </Accordion>
+  <Accordion title="Can I use Masker with Retell's built-in LLM?">
+    Not today — Masker only routes through the **Custom LLM** path. If you want PHI redaction in the LLM hop, switch to Custom LLM and point it at Masker.
+  </Accordion>
+  <Accordion title="What's the latency overhead?">
+    45–95 ms in steady state, identical to the Vapi pattern.
+  </Accordion>
+  <Accordion title="When will Retell move from beta to GA?">
+    Targeting the May 30, 2026 production launch.
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Vapi integration" icon="phone" href="/integrations/vapi">
+    The original integration — every detail also applies to Retell.
+  </Card>
+  <Card title="HIPAA voice agents pillar guide" icon="shield-halved" href="/guides/hipaa-voice-agents">
+    Architecture, compliance checklist, benchmarks.
+  </Card>
+  <Card title="Audit reports" icon="file-shield" href="/compliance/audit-reports">
+    Per‑session signed compliance reports with the full BAA chain.
+  </Card>
+  <Card title="Masker on the main site" icon="arrow-up-right-from-square" href="https://masker.dev/integrations">
+    Pricing, BAA, and integration overview.
+  </Card>
+</CardGroup>
+
+---
+
+_Last updated: May 5, 2026. Written by Masker.dev Engineering. Citations: [HHS HIPAA Privacy Rule §164.514](https://www.hhs.gov/hipaa/for-professionals/privacy/special-topics/de-identification/index.html), [Retell AI Custom LLM docs](https://docs.retellai.com/build/custom-llm)._
+
+export const HowToSchema = () => (
+  <script
+    type="application/ld+json"
+    dangerouslySetInnerHTML={{
+      __html: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "HowTo",
+        "name": "Wire a Retell AI Agent Through Masker for HIPAA-Compliant PHI Redaction",
+        "description": "Route Retell AI's Custom LLM URL through a Masker proxy to tokenize PHI before it reaches your LLM provider.",
+        "image": "https://masker.dev/og/retell-integration.png",
+        "totalTime": "PT5M",
+        "supply": [
+          { "@type": "HowToSupply", "name": "Retell AI account" },
+          { "@type": "HowToSupply", "name": "OpenAI API key" }
+        ],
+        "step": [
+          {
+            "@type": "HowToStep",
+            "name": "Create a Retell agent in the Masker portal",
+            "text": "Sign in with GitHub, click New Agent, choose Retell, and copy the per-agent proxy URL.",
+            "url": "https://docs.masker.dev/integrations/retell#step-1--create-a-retell-agent-in-the-masker-portal"
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Configure Retell to use Masker",
+            "text": "In the Retell dashboard, switch the agent to Custom LLM and paste the Masker proxy URL.",
+            "url": "https://docs.masker.dev/integrations/retell#step-2--configure-retell-to-use-masker"
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Place a test call",
+            "text": "Use Retell's Test Agent widget; the Masker portal shows raw vs. masked transcripts.",
+            "url": "https://docs.masker.dev/integrations/retell#step-3--place-a-test-call"
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Verify in OpenAI's logs",
+            "text": "Open platform.openai.com/logs and confirm the LLM only saw Masker tokens.",
+            "url": "https://docs.masker.dev/integrations/retell#step-4--verify-in-your-llm-providers-logs"
+          }
+        ]
+      })
+    }}
+  />
+);
+
+export const FAQSchema = () => (
+  <script
+    type="application/ld+json"
+    dangerouslySetInnerHTML={{
+      __html: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Does Retell AI support HIPAA?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Retell offers a BAA on its enterprise tier. Adding Masker reduces the surface area where PHI lives in the LLM hop, but you still need BAAs with Retell, your STT/TTS providers, and the LLM provider."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I use Masker with Retell's built-in LLM?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Not today — Masker only routes through the Custom LLM path. Switch the agent to Custom LLM and paste the Masker proxy URL."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What is the latency overhead?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "45 to 95 milliseconds in steady state, identical to the Vapi pattern."
+            }
+          }
+        ]
+      })
+    }}
+  />
+);
+
+<HowToSchema />
+<FAQSchema />
