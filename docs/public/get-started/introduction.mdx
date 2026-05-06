@@ -1,28 +1,66 @@
 ---
-title: "Welcome to Masker.dev"
-description: "The privacy layer that makes voice AI safe for healthcare."
+title: "Masker.dev Documentation — Real-time PHI Redaction for Voice AI Agents"
+sidebarTitle: "Welcome"
+description: "Official docs for Masker: self-hosted HIPAA PHI masking, Vapi and Retell integrations, API reference, streaming voice examples, and HIPAA compliance guides."
+keywords: "Masker Vapi integration, Masker Retell HIPAA, real-time PHI redaction tutorial, HIPAA voice agent redaction, PHI masking self-hosted, Masker.dev API reference, voice AI HIPAA compliance"
+"og:title": "Masker.dev Documentation — Real-time PHI Redaction for Voice AI"
+"og:description": "Self-hosted HIPAA PHI masking for Vapi and Retell. One URL change. Per-session signed audit reports."
+"og:type": "website"
+"og:image": "https://masker.dev/og/docs-home.png"
+"twitter:card": "summary_large_image"
+"twitter:title": "Masker.dev Documentation — Real-time PHI Redaction for Voice AI"
+"twitter:description": "HIPAA PHI masking for Vapi and Retell voice agents. One URL change."
 ---
 
-Masker is a HIPAA-grade privacy layer for voice AI agents. It sits between your voice platform (Vapi today; Bolna and Retell in beta) and your LLM, detects and redacts PHI and PII before any audio or text reaches the model, and rehydrates the original values on the way back so the caller's experience is unchanged.
+**Masker is a real-time PHI redaction proxy for voice AI agents.** Point your Vapi or Retell assistant's Custom LLM URL at Masker, and PHI (names, dates of birth, SSNs, MRNs, account numbers) is tokenized before it ever reaches OpenAI, Anthropic, or your self-hosted LLM — then rehydrated in the response so callers hear a normal answer. Self-hosted as a single Rust binary or run on our managed beta. Every session ships with an Ed25519-signed HIPAA compliance report.
 
 <Note>
 **Status: private beta.** The portal at [masker-voice.fly.dev](https://masker-voice.fly.dev) and the live demo at [try.masker.dev](https://try.masker.dev) are functional today. Production beta launches **May 30, 2026**. To request access, see [Beta access](/get-started/beta-access).
 </Note>
 
+## Quick start: one URL change for Vapi
+
+The fastest way to make a Vapi voice agent HIPAA‑safer is to swap its **Custom LLM URL** for a Masker proxy URL. No SDK install. No code change in your app.
+
+```bash
+# 1. Sign in to the Masker portal and create an agent
+open https://masker-voice.fly.dev/portal/login
+
+# 2. Copy the per-agent proxy URL (shown in the wizard)
+#    Format: https://masker-voice.fly.dev/proxy/{agent_id}/v1/chat/completions
+
+# 3. In Vapi → Assistant → Model:
+#    Provider:        Custom LLM
+#    Custom LLM URL:  <paste the Masker proxy URL>
+#    Model:           gpt-4o-mini   (or your choice)
+
+# 4. Place a test call. PHI is tokenized in transit:
+#    "Hi, I'm Sarah Johnson, DOB March 14 1982"
+#    → LLM sees: "Hi, I'm MSKV1.person_name.K_HEALTHCARE.a3f9..., DOB MSKV1.dob..."
+```
+
+That's the whole integration. The full walkthrough lives in the [Vapi integration tutorial](/integrations/vapi). For Retell, see [Retell + Masker](/integrations/retell).
+
 ## What you can do today
 
 <CardGroup cols={2}>
-  <Card title="Connect a Vapi agent" icon="phone" href="/portal/agents">
-    Sign in with GitHub, paste your Vapi key, and get a per-agent proxy URL in under two minutes.
+  <Card title="Vapi + Masker tutorial" icon="phone" href="/integrations/vapi">
+    Build a HIPAA voice agent in under five minutes. Step-by-step with code, screenshots, troubleshooting.
   </Card>
-  <Card title="See live redaction" icon="eye-slash" href="/get-started/quickstart">
-    Place a real call and watch PHI get tokenized before it reaches OpenAI — verify in OpenAI's own logs.
+  <Card title="Retell + Masker (HIPAA)" icon="phone-volume" href="/integrations/retell">
+    Wire Retell AI agents through Masker for PHI-safe LLM calls.
   </Card>
-  <Card title="Download signed audit reports" icon="file-shield" href="/compliance/audit-reports">
-    Every session generates an Ed25519-signed compliance report with a full BAA chain.
+  <Card title="HIPAA voice agents guide" icon="shield-halved" href="/guides/hipaa-voice-agents">
+    Architecture, compliance checklist, latency benchmarks. The pillar guide.
+  </Card>
+  <Card title="Self-hosted deployment" icon="server" href="/guides/self-hosted">
+    Run Masker as a Rust container in your AWS / GCP / on-prem VPC.
   </Card>
   <Card title="Try the no-signup demo" icon="flask" href="https://try.masker.dev">
     The hosted demo at try.masker.dev runs the full pipeline against a stub LLM — no account required.
+  </Card>
+  <Card title="Download signed audit reports" icon="file-shield" href="/compliance/audit-reports">
+    Every session generates an Ed25519-signed HIPAA compliance report with a full BAA chain.
   </Card>
 </CardGroup>
 
@@ -37,6 +75,9 @@ Masker is a HIPAA-grade privacy layer for voice AI agents. It sits between your 
   </Step>
   <Step title="Run the quickstart">
     [Quickstart](/get-started/quickstart) takes you from sign-in to first masked call in under five minutes.
+  </Step>
+  <Step title="Read the HIPAA pillar guide">
+    [Building HIPAA-Compliant Voice Agents with Masker](/guides/hipaa-voice-agents) — architecture, Safe Harbor coverage, benchmarks, and a deployment checklist.
   </Step>
 </Steps>
 
@@ -58,3 +99,123 @@ Masker is built and operated by a single founder (Navendra Jha, ex-Amazon Privac
 | Multi-tenant teams + RBAC | 🚧 v2 |
 
 Questions or pushback on any of this? [hello@masker.dev](mailto:hello@masker.dev). We read everything.
+
+## Frequently asked questions
+
+<AccordionGroup>
+  <Accordion title="What is Masker.dev?">
+    Masker is a self-hosted HIPAA-grade privacy layer for voice AI agents. It sits between your voice platform (Vapi, Retell, Bolna) and your LLM, detects and tokenizes PHI before any text reaches the model, and rehydrates the original values in the LLM's response.
+  </Accordion>
+  <Accordion title="How do I make my Vapi agent HIPAA compliant with Masker?">
+    Connect a Vapi agent in the Masker portal, copy the per-agent proxy URL, and paste it into Vapi as the Custom LLM URL. Every chat completion now flows through Masker, which tokenizes PHI before forwarding to OpenAI. Full walkthrough: [Vapi integration](/integrations/vapi).
+  </Accordion>
+  <Accordion title="Does Masker work with Retell AI?">
+    Yes. Retell supports Custom LLM endpoints; the integration is the same one-URL change. See [Retell integration](/integrations/retell).
+  </Accordion>
+  <Accordion title="Can I self-host Masker in my VPC?">
+    Yes. Masker ships as a single Rust binary and a Docker image. Run it on AWS, GCP, on-prem, or air-gapped. See [Self-hosted deployment](/guides/self-hosted).
+  </Accordion>
+  <Accordion title="What HIPAA Safe Harbor identifiers does Masker cover?">
+    9 of the 18 Safe Harbor categories at full coverage today; 3 partial; 5 in progress (target: May 30, 2026). Full matrix: [HIPAA Safe Harbor coverage](/compliance/hipaa-safe-harbor).
+  </Accordion>
+</AccordionGroup>
+
+---
+
+_Last updated: May 5, 2026. Written by Masker.dev Engineering. Citations: [HHS HIPAA Privacy Rule §164.514](https://www.hhs.gov/hipaa/for-professionals/privacy/special-topics/de-identification/index.html)._
+
+export const SoftwareApplicationSchema = () => (
+  <script
+    type="application/ld+json"
+    dangerouslySetInnerHTML={{
+      __html: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Masker",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Linux, macOS, Docker, Kubernetes",
+        "description": "Real-time PHI redaction proxy for voice AI agents. HIPAA-grade tokenization for Vapi, Retell, and Bolna, with per-session signed audit reports.",
+        "url": "https://docs.masker.dev",
+        "image": "https://masker.dev/og/docs-home.png",
+        "publisher": {
+          "@type": "Organization",
+          "name": "Masker.dev",
+          "url": "https://masker.dev"
+        },
+        "author": {
+          "@type": "Person",
+          "name": "Navendra Jha",
+          "url": "https://masker.dev/about"
+        },
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD",
+          "availability": "https://schema.org/PreOrder"
+        },
+        "softwareVersion": "0.x (private beta)",
+        "datePublished": "2026-04-01",
+        "dateModified": "2026-05-05",
+        "license": "https://github.com/masker-dev/masker/blob/main/LICENSE",
+        "keywords": "HIPAA, PHI redaction, voice AI, Vapi, Retell, Bolna, healthcare, compliance"
+      })
+    }}
+  />
+);
+
+export const FAQSchema = () => (
+  <script
+    type="application/ld+json"
+    dangerouslySetInnerHTML={{
+      __html: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is Masker.dev?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Masker is a self-hosted HIPAA-grade privacy layer for voice AI agents. It sits between your voice platform (Vapi, Retell, Bolna) and your LLM, detects and tokenizes PHI before any text reaches the model, and rehydrates the original values in the LLM's response."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How do I make my Vapi agent HIPAA compliant with Masker?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Connect a Vapi agent in the Masker portal, copy the per-agent proxy URL, and paste it into Vapi as the Custom LLM URL. Every chat completion now flows through Masker, which tokenizes PHI before forwarding to OpenAI."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does Masker work with Retell AI?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Retell supports Custom LLM endpoints; the integration is the same one-URL change."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I self-host Masker in my VPC?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Masker ships as a single Rust binary and a Docker image. Run it on AWS, GCP, on-prem, or air-gapped."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What HIPAA Safe Harbor identifiers does Masker cover?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "9 of the 18 HIPAA Safe Harbor categories at full coverage today; 3 partial; 5 in progress with a target of May 30, 2026."
+            }
+          }
+        ]
+      })
+    }}
+  />
+);
+
+<SoftwareApplicationSchema />
+<FAQSchema />

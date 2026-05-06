@@ -1,0 +1,41 @@
+---
+title: "Voice AI Integrations — Vapi, Retell, Bolna, Twilio + Custom LLM"
+sidebarTitle: "Overview"
+description: "Masker plugs into voice AI platforms via a one-URL Custom LLM change. Vapi, Retell, Bolna, and Twilio integrations with real-time PHI redaction."
+keywords: "Masker integrations, Vapi HIPAA, Retell HIPAA, Bolna HIPAA, Twilio custom LLM, voice AI HIPAA"
+---
+
+**BLUF:** Every Masker integration is the same shape — replace your voice platform's **Custom LLM URL** with a per‑agent Masker proxy URL. No SDK install. No app code change. PHI is tokenized in transit and rehydrated in the response.
+
+## Supported platforms
+
+| Platform | Status | Integration |
+| --- | --- | --- |
+| [Vapi](/integrations/vapi) | ✅ Live | Custom LLM URL + assistant‑request webhook |
+| [Retell AI](/integrations/retell) | 🚧 Beta | Custom LLM URL |
+| [Bolna](/integrations/bolna) | 🚧 Beta | Custom LLM URL |
+| [Twilio + custom LLM](/integrations/twilio-custom-llm) | 🛠️ DIY pattern | Twilio Voice → your service → Masker proxy |
+| Anthropic / self‑hosted upstreams | 🛠️ Roadmap | OpenAI‑compatible adapter |
+
+If your platform supports an OpenAI‑compatible Custom LLM URL, Masker works today. If it doesn't, see the [Twilio + custom LLM](/integrations/twilio-custom-llm) pattern for the DIY approach.
+
+## What every integration gets
+
+- **Real‑time PHI tokenization** — names, DOBs, SSNs, MRNs, account numbers, emails, phone numbers, IPs, addresses (see [Safe Harbor coverage](/compliance/hipaa-safe-harbor)).
+- **Per‑agent proxy URL** — namespaces the vault per agent so a key compromise doesn't blast across tenants.
+- **Per‑session signed audit report** — Ed25519 signed JSON with the BAA chain, [verifiable offline](/compliance/audit-reports).
+- **Configurable mask policy** — tune detectors and per‑category actions (`tokenize`, `redact`, `passthrough`). See [mask policy](/configuration/mask-policy).
+- **Self‑hosted option** — run Masker as a Rust container in your VPC. See [Self‑hosted deployment](/guides/self-hosted).
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Vapi tutorial" icon="phone" href="/integrations/vapi">Build a HIPAA voice agent in &lt;5 minutes.</Card>
+  <Card title="Retell tutorial" icon="phone-volume" href="/integrations/retell">Same pattern, Retell-flavored.</Card>
+  <Card title="HIPAA voice agents guide" icon="shield-halved" href="/guides/hipaa-voice-agents">Pillar reference for HIPAA voice deployments.</Card>
+  <Card title="masker.dev/integrations" icon="arrow-up-right-from-square" href="https://masker.dev/integrations">Marketing page with pricing and BAA.</Card>
+</CardGroup>
+
+---
+
+_Last updated: May 5, 2026. Written by Masker.dev Engineering._

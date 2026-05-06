@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Manual sitemap for docs.masker.dev.
+  Mintlify auto-serves /sitemap.xml from the navigation in mint.json. This file
+  is committed alongside the docs as the canonical version for the SEO team to
+  submit to Google Search Console and Bing Webmaster Tools. Keep both in sync
+  when adding new pages.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+
+  <!-- Get started -->
+  <url><loc>https://docs.masker.dev/</loc><lastmod>2026-05-05</lastmod><priority>1.0</priority></url>
+  <url><loc>https://docs.masker.dev/get-started/introduction</loc><lastmod>2026-05-05</lastmod><priority>1.0</priority></url>
+  <url><loc>https://docs.masker.dev/get-started/what-is-masker</loc><lastmod>2026-05-05</lastmod><priority>0.9</priority></url>
+  <url><loc>https://docs.masker.dev/get-started/how-it-works</loc><lastmod>2026-05-05</lastmod><priority>0.9</priority></url>
+  <url><loc>https://docs.masker.dev/get-started/quickstart</loc><lastmod>2026-05-05</lastmod><priority>0.9</priority></url>
+  <url><loc>https://docs.masker.dev/get-started/beta-access</loc><lastmod>2026-05-05</lastmod><priority>0.7</priority></url>
+
+  <!-- Integrations -->
+  <url><loc>https://docs.masker.dev/integrations/overview</loc><lastmod>2026-05-05</lastmod><priority>0.9</priority></url>
+  <url><loc>https://docs.masker.dev/integrations/vapi</loc><lastmod>2026-05-05</lastmod><priority>1.0</priority></url>
+  <url><loc>https://docs.masker.dev/integrations/retell</loc><lastmod>2026-05-05</lastmod><priority>1.0</priority></url>
+  <url><loc>https://docs.masker.dev/integrations/bolna</loc><lastmod>2026-05-05</lastmod><priority>0.7</priority></url>
+  <url><loc>https://docs.masker.dev/integrations/twilio-custom-llm</loc><lastmod>2026-05-05</lastmod><priority>0.7</priority></url>
+
+  <!-- Guides -->
+  <url><loc>https://docs.masker.dev/guides/hipaa-voice-agents</loc><lastmod>2026-05-05</lastmod><priority>1.0</priority></url>
+  <url><loc>https://docs.masker.dev/guides/self-hosted</loc><lastmod>2026-05-05</lastmod><priority>0.9</priority></url>
+  <url><loc>https://docs.masker.dev/guides/safe-harbor-identifiers</loc><lastmod>2026-05-05</lastmod><priority>0.9</priority></url>
+  <url><loc>https://docs.masker.dev/examples/healthcare-patient-intake</loc><lastmod>2026-05-05</lastmod><priority>0.8</priority></url>
+
+  <!-- Portal -->
+  <url><loc>https://docs.masker.dev/portal/overview</loc><lastmod>2026-05-05</lastmod><priority>0.7</priority></url>
+  <url><loc>https://docs.masker.dev/portal/sign-in</loc><lastmod>2026-05-05</lastmod><priority>0.6</priority></url>
+  <url><loc>https://docs.masker.dev/portal/agents</loc><lastmod>2026-05-05</lastmod><priority>0.7</priority></url>
+  <url><loc>https://docs.masker.dev/portal/sessions</loc><lastmod>2026-05-05</lastmod><priority>0.7</priority></url>
+  <url><loc>https://docs.masker.dev/portal/compliance-reports</loc><lastmod>2026-05-05</lastmod><priority>0.7</priority></url>
+
+  <!-- Masking -->
+  <url><loc>https://docs.masker.dev/masking/detection</loc><lastmod>2026-05-05</lastmod><priority>0.8</priority></url>
+  <url><loc>https://docs.masker.dev/masking/tokenization</loc><lastmod>2026-05-05</lastmod><priority>0.8</priority></url>
+  <url><loc>https://docs.masker.dev/masking/voice-pipeline</loc><lastmod>2026-05-05</lastmod><priority>0.8</priority></url>
+  <url><loc>https://docs.masker.dev/masking/synthetic-data</loc><lastmod>2026-05-05</lastmod><priority>0.7</priority></url>
+
+  <!-- Configuration -->
+  <url><loc>https://docs.masker.dev/configuration/mask-policy</loc><lastmod>2026-05-05</lastmod><priority>0.8</priority></url>
+  <url><loc>https://docs.masker.dev/configuration/environment-variables</loc><lastmod>2026-05-05</lastmod><priority>0.7</priority></url>
+  <url><loc>https://docs.masker.dev/configuration/deployment</loc><lastmod>2026-05-05</lastmod><priority>0.8</priority></url>
+
+  <!-- CLI -->
+  <url><loc>https://docs.masker.dev/cli/overview</loc><lastmod>2026-05-05</lastmod><priority>0.6</priority></url>
+  <url><loc>https://docs.masker.dev/cli/reference</loc><lastmod>2026-05-05</lastmod><priority>0.6</priority></url>
+
+  <!-- Compliance -->
+  <url><loc>https://docs.masker.dev/compliance/overview</loc><lastmod>2026-05-05</lastmod><priority>0.9</priority></url>
+  <url><loc>https://docs.masker.dev/compliance/hipaa-safe-harbor</loc><lastmod>2026-05-05</lastmod><priority>0.9</priority></url>
+  <url><loc>https://docs.masker.dev/compliance/audit-reports</loc><lastmod>2026-05-05</lastmod><priority>0.9</priority></url>
+  <url><loc>https://docs.masker.dev/compliance/data-residency</loc><lastmod>2026-05-05</lastmod><priority>0.7</priority></url>
+
+  <!-- Blog -->
+  <url><loc>https://docs.masker.dev/blog/medicare-needs-assessment-on-vapi</loc><lastmod>2026-05-05</lastmod><priority>0.8</priority></url>
+
+  <!-- API Reference -->
+  <url><loc>https://docs.masker.dev/api-reference/introduction</loc><lastmod>2026-05-05</lastmod><priority>0.8</priority></url>
+  <url><loc>https://docs.masker.dev/api-reference/authentication</loc><lastmod>2026-05-05</lastmod><priority>0.7</priority></url>
+  <url><loc>https://docs.masker.dev/api-reference/health</loc><lastmod>2026-05-05</lastmod><priority>0.4</priority></url>
+  <url><loc>https://docs.masker.dev/api-reference/auth/start-github-oauth</loc><lastmod>2026-05-05</lastmod><priority>0.6</priority></url>
+  <url><loc>https://docs.masker.dev/api-reference/auth/oauth-callback</loc><lastmod>2026-05-05</lastmod><priority>0.6</priority></url>
+  <url><loc>https://docs.masker.dev/api-reference/auth/logout</loc><lastmod>2026-05-05</lastmod><priority>0.5</priority></url>
+  <url><loc>https://docs.masker.dev/api-reference/auth/current-user</loc><lastmod>2026-05-05</lastmod><priority>0.5</priority></url>
+  <url><loc>https://docs.masker.dev/api-reference/agents/list-agents</loc><lastmod>2026-05-05</lastmod><priority>0.7</priority></url>
+  <url><loc>https://docs.masker.dev/api-reference/agents/create-agent</loc><lastmod>2026-05-05</lastmod><priority>0.7</priority></url>
+  <url><loc>https://docs.masker.dev/api-reference/agents/get-agent</loc><lastmod>2026-05-05</lastmod><priority>0.6</priority></url>
+  <url><loc>https://docs.masker.dev/api-reference/agents/delete-agent</loc><lastmod>2026-05-05</lastmod><priority>0.5</priority></url>
+  <url><loc>https://docs.masker.dev/api-reference/agents/list-agent-sessions</loc><lastmod>2026-05-05</lastmod><priority>0.6</priority></url>
+  <url><loc>https://docs.masker.dev/api-reference/sessions/list-sessions</loc><lastmod>2026-05-05</lastmod><priority>0.7</priority></url>
+  <url><loc>https://docs.masker.dev/api-reference/sessions/get-session</loc><lastmod>2026-05-05</lastmod><priority>0.7</priority></url>
+  <url><loc>https://docs.masker.dev/api-reference/sessions/get-session-report</loc><lastmod>2026-05-05</lastmod><priority>0.8</priority></url>
+  <url><loc>https://docs.masker.dev/api-reference/vapi/proxy-chat-completions</loc><lastmod>2026-05-05</lastmod><priority>0.9</priority></url>
+  <url><loc>https://docs.masker.dev/api-reference/vapi/assistant-request-webhook</loc><lastmod>2026-05-05</lastmod><priority>0.8</priority></url>
+
+</urlset>

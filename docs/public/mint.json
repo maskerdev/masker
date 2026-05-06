@@ -19,7 +19,34 @@
       "to": "#4F98A3"
     }
   },
+  "metadata": {
+    "og:site_name": "Masker.dev Documentation",
+    "og:title": "Masker.dev Documentation — Real-time PHI Redaction for Voice AI Agents",
+    "og:description": "Self-hosted HIPAA PHI masking for Vapi and Retell voice AI agents. One URL change. Per-session signed audit reports. Rust-based. Deploys in your VPC.",
+    "og:type": "website",
+    "og:url": "https://docs.masker.dev",
+    "og:locale": "en_US",
+    "twitter:card": "summary_large_image",
+    "twitter:site": "@maskerdev",
+    "twitter:creator": "@maskerdev",
+    "twitter:title": "Masker.dev Documentation — Real-time PHI Redaction for Voice AI",
+    "twitter:description": "Self-hosted HIPAA PHI masking for Vapi and Retell. One URL change. Per-session signed audit reports.",
+    "theme-color": "#01696F",
+    "format-detection": "telephone=no",
+    "robots": "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+    "keywords": "Masker Vapi integration, Masker Retell HIPAA, real-time PHI redaction tutorial, HIPAA voice agent redaction, PHI masking self-hosted, Masker.dev API reference, voice AI HIPAA compliance, healthcare voice agent, HIPAA Safe Harbor, PHI tokenization"
+  },
+  "seo": {
+    "indexHiddenPages": false
+  },
+  "search": {
+    "prompt": "Search Masker docs (Vapi, Retell, HIPAA, API)…"
+  },
   "topbarLinks": [
+    {
+      "name": "masker.dev",
+      "url": "https://masker.dev"
+    },
     {
       "name": "Live demo",
       "url": "https://try.masker.dev"
@@ -37,6 +64,14 @@
     {
       "name": "Documentation",
       "url": "/"
+    },
+    {
+      "name": "Integrations",
+      "url": "integrations"
+    },
+    {
+      "name": "Guides",
+      "url": "guides"
     },
     {
       "name": "API Reference",
@@ -69,6 +104,25 @@
         "get-started/how-it-works",
         "get-started/quickstart",
         "get-started/beta-access"
+      ]
+    },
+    {
+      "group": "Integrations",
+      "pages": [
+        "integrations/overview",
+        "integrations/vapi",
+        "integrations/retell",
+        "integrations/bolna",
+        "integrations/twilio-custom-llm"
+      ]
+    },
+    {
+      "group": "Guides",
+      "pages": [
+        "guides/hipaa-voice-agents",
+        "guides/self-hosted",
+        "guides/safe-harbor-identifiers",
+        "examples/healthcare-patient-intake"
       ]
     },
     {
@@ -172,5 +226,10 @@
     "twitter": "https://x.com/maskerdev",
     "github": "https://github.com/masker-dev/masker",
     "website": "https://masker.dev"
+  },
+  "feedback": {
+    "thumbsRating": true,
+    "suggestEdit": true,
+    "raiseIssue": true
   }
 }

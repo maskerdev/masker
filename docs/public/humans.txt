@@ -1,0 +1,30 @@
+/* TEAM */
+
+Founder & Engineering: Navendra Jha
+Site:      https://masker.dev
+Contact:   hello [at] masker.dev
+Twitter:   @maskerdev
+GitHub:    @masker-dev
+Location:  Seattle, WA · San Francisco, CA · USA
+
+
+/* THANKS */
+
+To every healthcare engineer who pushed back on a "trust me bro" privacy claim
+and asked for a real audit log. This product exists because of you.
+
+
+/* SITE */
+
+Last update:  2026-05-05
+Language:     English
+Doctype:      Mintlify (MDX)
+Components:   Rust (api-server), Next.js (portal), Mintlify (docs)
+Standards:    HIPAA Privacy Rule §164.514 (Safe Harbor)
+              45 CFR §164.312 (Technical Safeguards)
+
+
+/* OPEN SOURCE */
+
+Repo:   https://github.com/masker-dev/masker
+Issues: https://github.com/masker-dev/masker/issues

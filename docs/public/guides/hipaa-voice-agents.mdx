@@ -1,0 +1,399 @@
+---
+title: "Building HIPAA-Compliant Voice Agents with Masker Redaction (2026 Guide)"
+sidebarTitle: "HIPAA voice agents"
+description: "Complete 2026 reference for building HIPAA-compliant voice AI agents with real-time PHI redaction. Architecture, Safe Harbor coverage, BAA chain, latency benchmarks, deployment checklist."
+keywords: "HIPAA voice agent, HIPAA voice AI, real-time PHI redaction, Vapi HIPAA, Retell HIPAA, voice AI HIPAA compliance, healthcare voice agent, HIPAA Safe Harbor voice, PHI masking, HIPAA voice agent tutorial 2026"
+"og:title": "Building HIPAA Voice Agents with Masker (2026 Guide)"
+"og:description": "Pillar reference: architecture, Safe Harbor coverage, BAA chain, latency benchmarks, deployment checklist."
+"og:type": "article"
+"twitter:card": "summary_large_image"
+---
+
+**Bottom line up front:** A HIPAA‑compliant voice agent has three parts you can audit — (1) BAAs with every vendor that touches the call (voice platform, STT, LLM, TTS, observability), (2) a data‑flow control that prevents PHI from leaking outside that BAA chain, and (3) a per‑session signed audit trail that proves the first two on demand. Masker is the data‑flow control: a Rust proxy in front of your LLM that detects and tokenizes PHI in real time, rehydrates it for the caller, and emits a signed compliance report per session. This guide is the 2026 reference for building that system end‑to‑end with Vapi, Retell, or Bolna.
+
+This page is long on purpose. Skim the architecture diagram, jump to the [deployment checklist](#deployment-checklist), and use the [Safe Harbor coverage table](#hipaa-safe-harbor-coverage) to decide whether Masker covers the categories your workload actually depends on.
+
+## Who this guide is for
+
+- Engineers building patient intake, prior auth, scheduling, medication refill, or care navigation voice agents.
+- Compliance owners who need to defend a voice AI deployment in a HIPAA audit.
+- Founders evaluating "build vs. buy" for the PHI redaction layer.
+
+If you're building an **ambient scribe** (Abridge / Nabla style — passive listening + summarization), Masker is not the right fit. Masker is for **active voice agents** that hold conversations with patients.
+
+## What HIPAA actually requires for voice AI
+
+The HIPAA Privacy Rule's [de‑identification standard](https://www.hhs.gov/hipaa/for-professionals/privacy/special-topics/de-identification/index.html) defines two paths:
+
+1. **Expert Determination** — a qualified statistician certifies the risk of re‑identification is "very small."
+2. **Safe Harbor** — remove all 18 enumerated identifier categories (45 CFR §164.514(b)(2)).
+
+For voice AI, Safe Harbor is the path that can be audited from logs. Masker is built around Safe Harbor — every signed report includes the coverage matrix at the time of the call.
+
+In practice, "HIPAA‑compliant voice agent" means three things:
+
+| Layer | What you need | How Masker helps |
+| --- | --- | --- |
+| Vendor BAAs | Signed BAAs with every vendor that processes PHI | Masker enumerates the BAA chain in every audit report |
+| Data‑flow controls | PHI removed before it reaches systems outside the BAA chain | Masker is the data‑flow control in the LLM hop |
+| Audit trail | Per‑session record of what PHI was detected, what was tokenized, and what BAAs were active | Masker's per‑session Ed25519‑signed reports |
+
+## Reference architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Patient (caller)                                           │
+└────────────────┬────────────────────────────────────────────┘
+                 │ PSTN / WebRTC
+┌────────────────▼────────────────────────────────────────────┐
+│  Voice platform (Vapi / Retell / Bolna)                     │
+│  • Phone connection                                         │
+│  • STT (Deepgram, Nova-2)                                   │
+│  • TTS (ElevenLabs, Cartesia)                               │
+│  • Conversation state                                       │
+└────────────────┬────────────────────────────────────────────┘
+                 │ Custom LLM URL (OpenAI-compatible)
+┌────────────────▼────────────────────────────────────────────┐
+│  Masker proxy (hosted or self-hosted)                       │
+│  • Detect PHI (regex + Gemma-4 NER)                         │
+│  • Tokenize (deterministic, per-session vault)              │
+│  • Forward sanitized payload upstream                       │
+│  • Rehydrate tokens in response                             │
+│  • Emit signed audit record                                 │
+└────────────────┬────────────────────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────────────────────┐
+│  Upstream LLM (your choice)                                 │
+│  • OpenAI gpt-4o-mini / gpt-4o (default)                    │
+│  • Anthropic Claude (roadmap)                               │
+│  • Self-hosted model (via OpenAI-compatible adapter)        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+The integration is a **one URL change**. Vapi, Retell, and Bolna all expose a "Custom LLM URL" field; setting it to the Masker proxy URL is the entire wiring step. Walkthroughs:
+
+- [Vapi + Masker tutorial](/integrations/vapi)
+- [Retell + Masker tutorial](/integrations/retell)
+- [Bolna + Masker](/integrations/bolna)
+- [Twilio + custom LLM](/integrations/twilio-custom-llm)
+
+## How Masker handles PHI in a single conversation turn
+
+<Steps>
+  <Step title="STT output reaches Masker">
+    The voice platform finishes STT and POSTs an OpenAI‑compatible chat completion to the Masker proxy URL.
+  </Step>
+  <Step title="Pass 1 — regex detection">
+    Masker's first detection pass is regex‑based: SSN (dashed/undashed/spoken), phone (E.164 + spoken), email, ZIP, DOB, MRN, account numbers. Sub‑millisecond, high precision.
+  </Step>
+  <Step title="Pass 2 — Gemma-4 NER">
+    A small NER model (Gemma‑4) catches unstructured PHI: person names, organizations, locations, medical terms. 20–50 ms.
+  </Step>
+  <Step title="Tokenization">
+    Each detected span is replaced with a deterministic token: `MSKV1.person_name.K_HEALTHCARE.a3f9...`. The original value goes into the per‑session vault keyed by `(session_id, token)`. Tokens are deterministic *within* a session so the LLM can refer to "John" consistently across turns, but vary *across* sessions to prevent cross‑session correlation.
+  </Step>
+  <Step title="Forward to LLM">
+    The masked request is sent upstream. The LLM provider's logs only ever see tokens.
+  </Step>
+  <Step title="Rehydrate response">
+    Masker walks the LLM's response, finds every token, looks it up in the per‑session vault, and substitutes the original value back in.
+  </Step>
+  <Step title="Persist the audit record">
+    Masker writes the session record (raw + masked transcripts, detection details, BAA chain) and emits the Ed25519‑signed compliance report.
+  </Step>
+</Steps>
+
+For details, see [Detection pipeline](/masking/detection), [Tokenization](/masking/tokenization), and [Voice pipeline](/masking/voice-pipeline).
+
+## HIPAA Safe Harbor coverage
+
+The 18 Safe Harbor categories and Masker's current coverage:
+
+| # | Category | Status | Notes |
+| --- | --- | --- | --- |
+| A | Names | ✅ Full | Pass 2 NER, high recall on conversational input |
+| B | Geographic subdivisions smaller than a state | ✅ Full | ZIP + city + street regex + NER |
+| C | Dates more granular than year (birth, admission, discharge, death) | ◐ Partial | Year‑only on some phrasings still passes through |
+| D | Telephone numbers | ✅ Full | E.164 + North American + spoken forms |
+| E | Fax numbers | ✅ Full | Same regex as phone |
+| F | Email addresses | ✅ Full | RFC 5322 simplified |
+| G | Social Security numbers | ✅ Full | Dashed, undashed, spoken |
+| H | Medical record numbers (MRN) | ✅ Full | Tenant‑configurable patterns |
+| I | Health plan beneficiary numbers | ◐ Partial | Common payers full; long‑tail needs custom policy |
+| J | Account numbers | ✅ Full | Generic numeric + Luhn‑checked |
+| K | Certificate / license numbers | ◐ Partial | Major US states' DL covered; DEA/NPI partial |
+| L | Vehicle identifiers + license plates | ⏳ In progress | Targeted for May 30 |
+| M | Device identifiers and serial numbers | ⏳ In progress | Targeted for May 30 |
+| N | Web URLs | ⏳ In progress | URLs with query‑string PHI redacted today |
+| O | IP addresses | ✅ Full | v4 and v6, default action `redact` |
+| P | Biometric identifiers (fingerprint, voiceprint) | ⏳ In progress | Voice fingerprinting not in scope today |
+| Q | Full‑face photographs | N/A | Masker doesn't process images |
+| R | Any other unique identifying number | ⏳ In progress | Best‑effort via NER; can't claim "full" |
+
+Tally: **9 full, 3 partial, 5 in progress, 1 N/A.** Live matrix: [HIPAA Safe Harbor coverage](/compliance/hipaa-safe-harbor).
+
+## Latency benchmarks
+
+A masked turn on Masker's hosted endpoint, p50 numbers from May 2026 production traffic:
+
+| Stage | p50 | p95 |
+| --- | --- | --- |
+| Pass 1 regex | 0.4 ms | 1.1 ms |
+| Pass 2 Gemma‑4 NER | 28 ms | 47 ms |
+| Tokenization + vault write | 2.1 ms | 4.8 ms |
+| Network: voice platform → Masker | 18 ms | 31 ms |
+| Upstream LLM call | (passthrough; depends on model) | — |
+| Rehydration on response | 1.7 ms | 4.3 ms |
+| **Total Masker overhead** | **~50 ms** | **~88 ms** |
+
+These numbers are well inside Vapi/Retell's first‑token‑latency budget (< 1500 ms typical) and invisible in real‑time conversation.
+
+## Before/after: what the LLM provider actually sees
+
+**Caller utterance** (after STT):
+
+```
+"Hi, my name is Sarah Johnson, my date of birth is March 14, 1982,
+ and my member ID for BCBS is 447299."
+```
+
+**Without Masker** (what OpenAI logs):
+
+```json
+{
+  "messages": [{
+    "role": "user",
+    "content": "Hi, my name is Sarah Johnson, my date of birth is March 14, 1982, and my member ID for BCBS is 447299."
+  }]
+}
+```
+
+**With Masker** (what OpenAI logs):
+
+```json
+{
+  "messages": [{
+    "role": "user",
+    "content": "Hi, my name is MSKV1.person_name.K_HEALTHCARE.a3f9..., my date of birth is MSKV1.dob.K_HEALTHCARE.b7c2..., and my member ID for MSKV1.org_name.K_HEALTHCARE.7d4e... is MSKV1.account_number.K_HEALTHCARE.c1d8..."
+  }]
+}
+```
+
+The caller still hears "Got it, Sarah" because the response is rehydrated on the way back.
+
+## BAA chain in the audit report
+
+Every session ships with an Ed25519‑signed JSON report. The minimal BAA chain for a Vapi + Masker + OpenAI deployment:
+
+| Hop | Vendor | BAA needed | Default retention |
+| --- | --- | --- | --- |
+| Phone | Vapi | ✅ | per Vapi policy |
+| STT | Deepgram (via Vapi) | ✅ | per Deepgram BAA |
+| LLM hop (proxy) | Masker | ✅ | configurable; default 0 days for raw payloads |
+| LLM | OpenAI Enterprise | ✅ | 30 days (logs only see tokens) |
+| TTS | ElevenLabs (via Vapi) | ✅ | per ElevenLabs BAA |
+| Observability | (your stack) | ✅ | configurable |
+
+The audit report enumerates each hop, the BAA reference, and the retention policy in effect for the session. See [Audit reports](/compliance/audit-reports).
+
+## Deployment checklist
+
+A pre‑production checklist before pointing real PHI traffic at the system:
+
+<AccordionGroup>
+  <Accordion title="Vendor & contract">
+    - [ ] Signed BAA with the voice platform (Vapi/Retell/Bolna)
+    - [ ] Signed BAA with the STT provider (Deepgram, AssemblyAI, etc.)
+    - [ ] Signed BAA with the TTS provider (ElevenLabs, Cartesia, etc.)
+    - [ ] Signed BAA with the LLM provider (OpenAI Enterprise, Anthropic, etc.)
+    - [ ] Signed BAA with Masker (hosted) **or** self‑hosted in your VPC
+    - [ ] Signed BAA with your observability vendor (Datadog HIPAA, etc.)
+  </Accordion>
+  <Accordion title="Mask policy">
+    - [ ] Reviewed [HIPAA Safe Harbor coverage matrix](/compliance/hipaa-safe-harbor) for your workload's identifier categories
+    - [ ] Custom regex added for any tenant‑specific MRN/account formats
+    - [ ] Per‑category actions chosen (`tokenize` vs `redact` vs `passthrough`)
+    - [ ] Policy committed to version control
+  </Accordion>
+  <Accordion title="Operational">
+    - [ ] Monitoring on Masker's `/health` endpoint
+    - [ ] Alerting on detection error rate > 0.1%
+    - [ ] Alerting on rehydration failure rate > 0%
+    - [ ] Audit reports archived to your HIPAA storage (S3 with object lock, etc.)
+    - [ ] Incident response runbook references Masker's `request_id`
+  </Accordion>
+  <Accordion title="Verification">
+    - [ ] End‑to‑end test call with synthetic PHI
+    - [ ] LLM provider logs verified to only contain tokens
+    - [ ] Audit report Ed25519 signature verified offline
+    - [ ] Latency p95 measured and within budget
+  </Accordion>
+</AccordionGroup>
+
+## Common architecture mistakes
+
+<AccordionGroup>
+  <Accordion title="Storing raw transcripts in the voice platform">
+    Vapi/Retell/Bolna store their own transcripts. If you don't disable transcript retention or rotate transcripts into a HIPAA‑safe store, raw PHI lives there. Masker's portal can ingest masked transcripts via webhook — see [Voice pipeline](/masking/voice-pipeline).
+  </Accordion>
+  <Accordion title="Tool calls bypassing the LLM URL">
+    Some teams configure tools (function calling, RAG retrievers) to call vendor APIs directly. Those calls bypass Masker. Either route them through Masker as well, or accept that those vendors must also be in the BAA chain.
+  </Accordion>
+  <Accordion title="Forgetting about prompt caching">
+    OpenAI's prompt caching keys on the prompt prefix. If your masked prompts vary (because tokens vary across sessions), cache hit rates drop. This is a feature for privacy and a cost consideration for high‑volume deployments — model the cost trade‑off before launch.
+  </Accordion>
+  <Accordion title="Not testing rehydration on tool results">
+    Tool calls (function calling) often return structured data with PHI fields. Make sure those fields are masked before they hit the LLM and rehydrated before they hit the caller. See [Tokenization](/masking/tokenization).
+  </Accordion>
+</AccordionGroup>
+
+## Frequently asked questions
+
+<AccordionGroup>
+  <Accordion title="How do I make my voice AI agent HIPAA compliant?">
+    Three steps: sign BAAs with every vendor in the call path, add a data‑flow control (Masker) so PHI never leaves that BAA chain, and ship per‑session signed audit reports that prove both. The integration with Vapi, Retell, or Bolna is a one‑URL change.
+  </Accordion>
+  <Accordion title="Is OpenAI HIPAA-compliant?">
+    OpenAI offers a BAA on enterprise contracts. With a BAA, you can send PHI to OpenAI legally — but logs are still retained for 30 days by default. Masker reduces the surface area further by ensuring those logs only contain tokens.
+  </Accordion>
+  <Accordion title="Do I still need Masker if my LLM provider has a BAA?">
+    A BAA is a contract. Masker is a data‑flow control. They serve different purposes — a BAA gives you legal cover; a data‑flow control reduces the breach surface area in the first place. Many compliance teams require both.
+  </Accordion>
+  <Accordion title="What does Masker do that Microsoft Presidio doesn't?">
+    Presidio is a detection library. Masker is a data‑flow layer (proxy, vault, rehydration, audit). Masker uses regex similar to Presidio's in Pass 1, then adds the per‑agent proxy, deterministic token format, per‑session vault, response rehydration, and signed audit reports — none of which Presidio provides.
+  </Accordion>
+  <Accordion title="Can Masker run in my VPC?">
+    Yes. Masker is a single Rust binary (and Docker image). Run it on AWS, GCP, on‑prem, or air‑gapped. See [Self‑hosted deployment](/guides/self-hosted).
+  </Accordion>
+  <Accordion title="How is Masker different from a HIPAA-compliant voice platform?">
+    A HIPAA‑compliant voice platform handles the phone connection, STT, and TTS under a BAA. Masker handles the LLM hop. They're complementary; Masker doesn't replace Vapi/Retell.
+  </Accordion>
+  <Accordion title="What's the latency overhead?">
+    45–95 ms p95 in steady state on the hosted endpoint. Self‑hosted in the same VPC as your LLM provider can shave 15–30 ms off network hops.
+  </Accordion>
+  <Accordion title="What happens if a token is leaked to the caller?">
+    Open the session in the Masker portal. Every token has a `rehydrated: true|false` flag. The most common cause of `false` is the LLM truncating a token mid‑string; the fix is to tighten the prompt or use the longer hash variant.
+  </Accordion>
+  <Accordion title="How does Masker handle the 18 HIPAA Safe Harbor identifiers?">
+    9 full, 3 partial, 5 in progress, 1 N/A as of May 2026. Live matrix: [HIPAA Safe Harbor coverage](/compliance/hipaa-safe-harbor).
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Vapi + Masker tutorial" icon="phone" href="/integrations/vapi">Build a HIPAA voice agent in &lt;5 minutes.</Card>
+  <Card title="Retell + Masker tutorial" icon="phone-volume" href="/integrations/retell">Same pattern for Retell AI.</Card>
+  <Card title="Self-hosted deployment" icon="server" href="/guides/self-hosted">Run Masker in your own VPC.</Card>
+  <Card title="Patient intake example" icon="hospital-user" href="/examples/healthcare-patient-intake">End-to-end agent with code repo links.</Card>
+  <Card title="Safe Harbor identifier deep-dive" icon="list-check" href="/guides/safe-harbor-identifiers">All 18 categories, how Masker handles each.</Card>
+  <Card title="Audit reports" icon="file-shield" href="/compliance/audit-reports">Per-session signed compliance reports.</Card>
+</CardGroup>
+
+---
+
+_Last updated: May 5, 2026. Written by Masker.dev Engineering. Lead author: Navendra Jha (ex-Amazon Privacy Bar Raiser). Citations: [HHS HIPAA Privacy Rule §164.514](https://www.hhs.gov/hipaa/for-professionals/privacy/special-topics/de-identification/index.html), [HHS HIPAA for Professionals](https://www.hhs.gov/hipaa/for-professionals/index.html), [Vapi Custom LLM docs](https://docs.vapi.ai/customization/custom-llm), [Retell AI Custom LLM docs](https://docs.retellai.com/build/custom-llm)._
+
+export const TechArticleSchema = () => (
+  <script
+    type="application/ld+json"
+    dangerouslySetInnerHTML={{
+      __html: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "TechArticle",
+        "headline": "Building HIPAA-Compliant Voice Agents with Masker Redaction (2026 Guide)",
+        "description": "Complete reference for building HIPAA-compliant voice AI agents with real-time PHI redaction. Architecture, Safe Harbor coverage, BAA chain, latency benchmarks, deployment checklist.",
+        "image": "https://masker.dev/og/hipaa-voice-agents-guide.png",
+        "datePublished": "2026-05-05",
+        "dateModified": "2026-05-05",
+        "author": {
+          "@type": "Person",
+          "name": "Navendra Jha",
+          "url": "https://masker.dev/about",
+          "jobTitle": "Founder, Masker.dev"
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "Masker.dev",
+          "url": "https://masker.dev",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://masker.dev/logo.png"
+          }
+        },
+        "mainEntityOfPage": {
+          "@type": "WebPage",
+          "@id": "https://docs.masker.dev/guides/hipaa-voice-agents"
+        },
+        "proficiencyLevel": "Expert",
+        "dependencies": "Vapi or Retell account, OpenAI key, Masker portal access",
+        "keywords": "HIPAA voice agent, real-time PHI redaction, Vapi HIPAA, Retell HIPAA, Safe Harbor, voice AI compliance"
+      })
+    }}
+  />
+);
+
+export const FAQSchema = () => (
+  <script
+    type="application/ld+json"
+    dangerouslySetInnerHTML={{
+      __html: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "How do I make my voice AI agent HIPAA compliant?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Sign BAAs with every vendor in the call path, add a data-flow control (Masker) so PHI never leaves that BAA chain, and ship per-session signed audit reports that prove both. The integration with Vapi, Retell, or Bolna is a one-URL change."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Is OpenAI HIPAA compliant?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "OpenAI offers a BAA on enterprise contracts. With a BAA you can send PHI to OpenAI legally, but logs are retained for 30 days by default. Masker ensures those logs only contain tokens."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Do I still need Masker if my LLM provider has a BAA?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "A BAA is a contract. Masker is a data-flow control. They serve different purposes; many compliance teams require both."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can Masker run in my VPC?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Masker is a single Rust binary and Docker image. Run it on AWS, GCP, on-prem, or air-gapped."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What is the latency overhead of Masker?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "45 to 95 milliseconds p95 in steady state on the hosted endpoint."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How does Masker handle the 18 HIPAA Safe Harbor identifiers?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "9 categories at full coverage, 3 partial, 5 in progress, 1 N/A as of May 2026."
+            }
+          }
+        ]
+      })
+    }}
+  />
+);
+
+<TechArticleSchema />
+<FAQSchema />

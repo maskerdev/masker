@@ -1,0 +1,54 @@
+---
+title: "Bolna + Masker: PHI Redaction for Bolna Voice Agents"
+sidebarTitle: "Bolna"
+description: "Wire Bolna voice agents through Masker for real-time PHI redaction in the LLM hop. Custom LLM URL pattern with code examples."
+keywords: "Masker Bolna, Bolna HIPAA, Bolna PHI redaction, Bolna custom LLM, voice AI India HIPAA"
+---
+
+**BLUF:** Bolna supports OpenAI‑compatible Custom LLM endpoints. Point your Bolna agent's LLM URL at a Masker proxy URL and PHI is tokenized in transit. Pattern is identical to [Vapi](/integrations/vapi) and [Retell](/integrations/retell) — only the dashboard step differs.
+
+<Note>
+**Status:** Bolna integration is in beta. Bolna's primary deployment region is India; Masker's hosted endpoint is US‑West today. For low‑latency Indian deployments, consider [self‑hosting Masker](/guides/self-hosted) in an Indian region.
+</Note>
+
+## Configure Bolna to use Masker
+
+```yaml
+# Bolna agent config (example)
+llm:
+  type: custom
+  base_url: https://masker-voice.fly.dev/proxy/{agent_id}/v1
+  model: gpt-4o-mini
+  temperature: 0.4
+```
+
+The `base_url` is the proxy URL minus the trailing `/chat/completions` — Bolna appends the standard OpenAI path itself.
+
+## Steps
+
+<Steps>
+  <Step title="Create a Bolna agent in the Masker portal">
+    Sign in with GitHub, click **New Agent**, and copy the per‑agent proxy URL.
+  </Step>
+  <Step title="Set Bolna's LLM base_url">
+    In Bolna's agent config (YAML or dashboard), set the LLM type to `custom` and paste the Masker base URL.
+  </Step>
+  <Step title="Test">
+    Place a call. The Masker portal shows raw vs. masked transcripts.
+  </Step>
+</Steps>
+
+## Latency note for Indian deployments
+
+If your callers are in India and you're using Masker's US‑West hosted endpoint, expect ~150–250 ms additional network latency per LLM round trip. For production, deploy Masker in an Indian region (we've validated AWS `ap-south-1` and GCP `asia-south1`). See [Self‑hosted deployment](/guides/self-hosted).
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Self‑hosted deployment" icon="server" href="/guides/self-hosted">Deploy Masker in your region for low‑latency Indian calls.</Card>
+  <Card title="HIPAA voice agents guide" icon="shield-halved" href="/guides/hipaa-voice-agents">Pillar reference.</Card>
+</CardGroup>
+
+---
+
+_Last updated: May 5, 2026. Written by Masker.dev Engineering._

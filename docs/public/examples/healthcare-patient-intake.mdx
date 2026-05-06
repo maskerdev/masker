@@ -1,0 +1,107 @@
+---
+title: "Healthcare Patient Intake Voice Agent — End-to-End Example with Masker"
+sidebarTitle: "Patient intake"
+description: "Full reference implementation: a HIPAA-compliant patient intake voice agent on Vapi + Masker, with prompt, schema, code, and audit report walkthrough."
+keywords: "patient intake voice agent, HIPAA patient intake, Vapi patient intake, voice AI healthcare example, Masker example"
+"og:type": "article"
+---
+
+**BLUF:** This example walks an end‑to‑end patient intake voice agent built on Vapi + Masker. The agent collects name, DOB, insurance, chief complaint, and medications in a 3–5 minute call. Every PHI field is tokenized in transit; OpenAI's logs only see Masker tokens; the per‑session audit report has the full BAA chain.
+
+Source repo (illustrative): [github.com/masker-dev/example-patient-intake](https://github.com/masker-dev/example-patient-intake) — _placeholder; ships May 30, 2026 with the production beta._
+
+## Architecture
+
+```
+Caller ↔ Vapi ──► Masker proxy ──► OpenAI (gpt-4o-mini) ──► Masker ──► Vapi ↔ Caller
+                  │                                          │
+                  detect + tokenize                          rehydrate
+                  (regex + Gemma-4 NER)                      from per-session vault
+                                                             │
+                                                             └► Function call: createPatientRecord(...)
+                                                                Masker rehydrates the args before they hit your EHR.
+```
+
+## Prompt skeleton
+
+```yaml
+# Vapi assistant config (excerpt)
+firstMessage: "Hi, this is the Westside Family Medicine intake line. To get started, can I get your full name?"
+
+systemPrompt: |
+  You are a friendly patient intake coordinator for Westside Family Medicine.
+  Collect: full name, DOB, insurance carrier and member ID, chief complaint,
+  current medications, and pharmacy preference. Ask one or two questions at a
+  time. Confirm sensitive fields (DOB, insurance) by reading them back.
+  When complete, call the createPatientRecord function.
+
+model:
+  provider: custom-llm
+  url: https://masker-voice.fly.dev/proxy/{agent_id}/v1/chat/completions
+  model: gpt-4o-mini
+  temperature: 0.3
+```
+
+## Function call schema
+
+```json
+{
+  "name": "createPatientRecord",
+  "description": "Create a patient intake record after the conversation is complete.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "full_name": { "type": "string" },
+      "dob": { "type": "string", "format": "date" },
+      "insurance_carrier": { "type": "string" },
+      "insurance_member_id": { "type": "string" },
+      "chief_complaint": { "type": "string" },
+      "current_medications": { "type": "array", "items": { "type": "string" } },
+      "pharmacy_name": { "type": "string" }
+    },
+    "required": ["full_name", "dob", "insurance_carrier", "insurance_member_id", "chief_complaint"]
+  }
+}
+```
+
+Masker tokenizes the PHI fields (`full_name`, `dob`, `insurance_member_id`) in the request to OpenAI, and rehydrates them in the function call arguments returned to Vapi — so when Vapi POSTs to your `createPatientRecord` webhook, it has the original values.
+
+## Sample audit report (excerpt)
+
+```json
+{
+  "session_id": "sess_01HYZ...",
+  "agent_id": "agt_01HYZ...",
+  "platform": "vapi",
+  "started_at": "2026-05-05T19:14:32.481Z",
+  "duration_seconds": 213,
+  "baa_chain": [
+    { "vendor": "Vapi",       "role": "voice_platform" },
+    { "vendor": "Deepgram",   "role": "stt" },
+    { "vendor": "Masker.dev", "role": "phi_redaction" },
+    { "vendor": "OpenAI",     "role": "llm" },
+    { "vendor": "ElevenLabs", "role": "tts" }
+  ],
+  "phi_summary": {
+    "person_name":     { "detected": 4, "rehydrated": 4 },
+    "dob":             { "detected": 1, "rehydrated": 1 },
+    "phone_number":    { "detected": 0, "rehydrated": 0 },
+    "account_number":  { "detected": 1, "rehydrated": 1 },
+    "address":         { "detected": 1, "rehydrated": 1 }
+  },
+  "safe_harbor_coverage": "9-full-3-partial-5-in-progress",
+  "signature": { "alg": "Ed25519", "sig": "..." }
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Vapi integration tutorial" icon="phone" href="/integrations/vapi">Wire the agent end-to-end.</Card>
+  <Card title="HIPAA voice agents guide" icon="shield-halved" href="/guides/hipaa-voice-agents">Architecture, BAA chain, latency.</Card>
+  <Card title="Audit reports" icon="file-shield" href="/compliance/audit-reports">How the report is signed and verified.</Card>
+</CardGroup>
+
+---
+
+_Last updated: May 5, 2026. Written by Masker.dev Engineering._
