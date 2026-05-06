@@ -48,6 +48,10 @@
       "url": "https://masker.dev"
     },
     {
+      "name": "Blog",
+      "url": "https://masker.dev/blog"
+    },
+    {
       "name": "Live demo",
       "url": "https://try.masker.dev"
     },
@@ -169,12 +173,6 @@
       ]
     },
     {
-      "group": "Blog",
-      "pages": [
-        "blog/medicare-needs-assessment-on-vapi"
-      ]
-    },
-    {
       "group": "API Reference",
       "pages": [
         "api-reference/introduction",
@@ -231,5 +229,17 @@
     "thumbsRating": true,
     "suggestEdit": true,
     "raiseIssue": true
-  }
+  },
+  "redirects": [
+    {
+      "source": "/blog/medicare-needs-assessment-on-vapi",
+      "destination": "https://masker.dev/blog/medicare-needs-assessment-on-vapi",
+      "permanent": true
+    },
+    {
+      "source": "/blog/:slug",
+      "destination": "https://masker.dev/blog/:slug",
+      "permanent": true
+    }
+  ]
 }
